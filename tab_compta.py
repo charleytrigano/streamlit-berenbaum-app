@@ -1,19 +1,12 @@
-# -*- coding: utf-8 -*-
-import streamlit as st, pandas as pd
-import escrow_manager as esc
+import streamlit as st
+import pandas as pd
 
-st.set_page_config(page_title="💳 Compta Client", page_icon="💳", layout="wide")
+def main():
+    st.header("💳 Comptabilité Client")
 
-clients, _ = esc.load_all()
-st.header("💳 Compta Client")
+    df = st.session_state.get("clients_df")
+    if df is None or df.empty:
+        st.info("Aucun client disponible.")
+        return
 
-if clients.empty:
-    st.info("Aucune donnée.")
-else:
-    cols = [c for c in ["Montant total","Acompte 1","Montant"] if c in clients.columns]
-    if cols:
-        for c in cols: clients[c] = clients[c].apply(esc.to_float)
-        agg = clients.groupby("Nom")[cols].sum().reset_index()
-        st.dataframe(agg, use_container_width=True, height=420)
-    else:
-        st.dataframe(clients, use_container_width=True, height=420)
+    st.dataframe(df[["Nom", "Montant"]] if "Nom" in df.columns else df)

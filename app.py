@@ -48,7 +48,7 @@ def tab_fichiers():
             else:
                 st.session_state["clients_df"] = df
                 st.success("Fichier par défaut rechargé.")
-                st.experimental_rerun()
+                st.rerun()
 
     with c2:
         st.subheader("⬆️ Importer un autre Excel")
@@ -67,7 +67,7 @@ def tab_fichiers():
             else:
                 st.session_state["clients_df"] = df
                 st.success("Nouvelles données chargées.")
-                st.experimental_rerun()
+                st.rerun()
 
 
 # === 3. Utilitaires de nettoyage =============================================

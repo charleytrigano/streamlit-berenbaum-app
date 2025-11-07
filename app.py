@@ -102,51 +102,65 @@ def _ensure_cols(df: pd.DataFrame, cols):
     return df
 
 
-# === 4. ONGLET DASHBOARD =====================================================
 def tab_dashboard():
     st.header("📊 Tableau de bord")
 
     data = st.session_state.get("data_xlsx", {})
-    if not data or "Clients" not in data:
-        st.warning("Aucune feuille 'Clients' trouvée. Charge ton fichier Excel complet.")
+    if not data:
+        st.warning("Aucune donnée Excel disponible.")
         return
 
-    df = data["Clients"].copy()
+    # 🔍 Recherche de la feuille "Clients" ou équivalent
+    target_sheet = None
+    for s in data.keys():
+        if "client" in s.lower():
+            target_sheet = s
+            break
+    if target_sheet is None:
+        # fallback: première feuille du classeur
+        target_sheet = list(data.keys())[0]
+        st.info(f"Feuille 'Clients' introuvable, utilisation de « {target_sheet} ».")
+
+    df = data[target_sheet].copy()
+    if df.empty:
+        st.warning("La feuille sélectionnée est vide.")
+        return
 
     # Colonnes importantes
     COL_HONO = "Montant honoraires (US $)"
     COL_AUTRES = "Autres frais (US $)"
     AC_COLS = ["Acompte 1", "Acompte 2", "Acompte 3", "Acompte 4"]
 
-    # Nettoyage
+    # Nettoyage et calculs
     df = _ensure_cols(df, [COL_HONO, COL_AUTRES] + AC_COLS)
     df[COL_HONO] = _clean_number_series(df[COL_HONO])
     df[COL_AUTRES] = _clean_number_series(df[COL_AUTRES])
     for c in AC_COLS:
         df[c] = _clean_number_series(df[c])
 
-    # Calculs
     df["Montant facturé"] = df[COL_HONO] + df[COL_AUTRES]
     df["Total payé"] = df[AC_COLS].sum(axis=1)
     df["Solde restant"] = df["Montant facturé"] - df["Total payé"]
 
-    # Synthèse
+    # === Synthèse compacte
     st.markdown("### 📈 Synthèse financière")
     k1, k2, k3, k4, k5, k6 = st.columns(6)
     k1.metric("👥 Clients", f"{len(df)}")
-    k2.metric("💼 Honoraires", f"{df[COL_HONO].sum():,.2f} US$")
-    k3.metric("🧾 Autres frais", f"{df[COL_AUTRES].sum():,.2f} US$")
-    k4.metric("💰 Montant facturé", f"{df['Montant facturé'].sum():,.2f} US$")
-    k5.metric("💸 Total payé", f"{df['Total payé'].sum():,.2f} US$")
-    k6.metric("🧾 Solde restant", f"{df['Solde restant'].sum():,.2f} US$")
+    k2.metric("💼 Honoraires", f"{df[COL_HONO].sum():,.0f} US$")
+    k3.metric("🧾 Autres frais", f"{df[COL_AUTRES].sum():,.0f} US$")
+    k4.metric("💰 Facturé", f"{df['Montant facturé'].sum():,.0f} US$")
+    k5.metric("💸 Payé", f"{df['Total payé'].sum():,.0f} US$")
+    k6.metric("📉 Solde", f"{df['Solde restant'].sum():,.0f} US$")
 
-    # Tableau principal
+    # === Dossiers
     st.markdown("---")
-    st.subheader("📋 Dossiers")
+    st.subheader("📋 Dossiers clients")
     show_cols = [c for c in df.columns if c in ["Nom", COL_HONO, COL_AUTRES, "Montant facturé", "Total payé", "Solde restant"]]
+    if not show_cols:
+        show_cols = df.columns.tolist()[:6]
     st.dataframe(df[show_cols], use_container_width=True, hide_index=True)
 
-    # Top 10
+    # === Top 10 (tableau, pas graphique)
     st.markdown("---")
     st.subheader("🏆 Top 10 par montant facturé")
     top10 = df.sort_values("Montant facturé", ascending=False).head(10)

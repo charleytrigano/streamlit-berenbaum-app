@@ -2,10 +2,9 @@ import streamlit as st
 import pandas as pd
 import re
 
-# === FONCTIONS INTERNES ===
-
+# === Nettoyage des montants ===
 def _clean_number_series(s: pd.Series) -> pd.Series:
-    """Convertit une série (texte) en float, nettoie $, espaces, etc."""
+    """Nettoie et convertit une série de valeurs monétaires en float."""
     if s is None:
         return pd.Series(dtype=float)
     s = s.astype(str)
@@ -25,14 +24,14 @@ def _clean_number_series(s: pd.Series) -> pd.Series:
     out = out.where(~neg_mask, -out)
     return out
 
+# === Sécurisation colonnes ===
 def _ensure_cols(df: pd.DataFrame, cols) -> pd.DataFrame:
     for c in cols:
         if c not in df.columns:
             df[c] = 0.0
     return df
 
-# === ONGLET PRINCIPAL ===
-
+# === Tableau de bord ===
 def main():
     st.header("📊 Tableau de bord")
 
@@ -49,54 +48,65 @@ def main():
     needed = [COL_HONO, COL_AUTRES] + AC_COLS
     df = _ensure_cols(df, needed)
 
+    # Nettoyage
     df[COL_HONO] = _clean_number_series(df[COL_HONO])
     df[COL_AUTRES] = _clean_number_series(df[COL_AUTRES])
     for c in AC_COLS:
         df[c] = _clean_number_series(df[c])
 
-    # === Calculs financiers ===
+    # Calculs
     df["Montant facturé"] = df[COL_HONO] + df[COL_AUTRES]
     df["Total payé"] = df[AC_COLS].sum(axis=1)
     df["Solde restant"] = df["Montant facturé"] - df["Total payé"]
 
-    total_clients = int(len(df))
-    total_hono = float(df[COL_HONO].sum())
-    total_autres = float(df[COL_AUTRES].sum())
-    total_facture = total_hono + total_autres
-    total_paye = float(df["Total payé"].sum())
-    solde_restant = float(df["Solde restant"].sum())
+    total_clients = len(df)
+    total_hono = df[COL_HONO].sum()
+    total_autres = df[COL_AUTRES].sum()
+    total_facture = df["Montant facturé"].sum()
+    total_paye = df["Total payé"].sum()
+    solde_restant = df["Solde restant"].sum()
 
-    # === KPI compacts (une seule ligne, petite taille) ===
-    st.markdown(
-        """
+    # --- Style KPI réduits ---
+    st.markdown("""
         <style>
-        div[data-testid="stMetricValue"] {
-            font-size: 1rem !important;
-        }
-        div[data-testid="stMetricLabel"] {
-            font-size: 0.8rem !important;
-        }
+        div[data-testid="stMetricValue"] {font-size:0.9rem !important;}
+        div[data-testid="stMetricLabel"] {font-size:0.75rem !important;}
         </style>
-        """,
-        unsafe_allow_html=True
-    )
+    """, unsafe_allow_html=True)
 
-    st.markdown("### 📈 Indicateurs financiers (vue globale)")
-    c1, c2, c3, c4, c5, c6 = st.columns(6)
+    # === Ligne 1 : détails ===
+    st.markdown("### 💼 Détail des montants")
+    c1, c2, c3 = st.columns(3)
     c1.metric("👥 Clients", f"{total_clients}")
-    c2.metric("💼 Honoraires", f"{total_hono:,.2f} US$")
+    c2.metric("💵 Montant honoraires", f"{total_hono:,.2f} US$")
     c3.metric("🧾 Autres frais", f"{total_autres:,.2f} US$")
-    c4.metric("💰 Montant facturé", f"{total_facture:,.2f} US$")
-    c5.metric("💵 Total payé", f"{total_paye:,.2f} US$")
-    c6.metric("💣 Solde restant", f"{solde_restant:,.2f} US$")
+
+    # === Ligne 2 : synthèse ===
+    st.markdown("### 📈 Synthèse financière")
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("💰 Montant facturé", f"{total_facture:,.2f} US$")
+    col2.metric("💸 Total payé", f"{total_paye:,.2f} US$")
+    # Mise en couleur automatique du solde
+    color = "green" if solde_restant == 0 else ("orange" if solde_restant < 0.2 * total_facture else "red")
+    solde_html = f"<span style='color:{color};font-weight:bold'>{solde_restant:,.2f} US$</span>"
+    col3.markdown(f"<div style='font-size:0.9rem;'>🧾 Solde restant<br>{solde_html}</div>", unsafe_allow_html=True)
+    col4.metric("📊 % Payé", f"{(total_paye/total_facture*100 if total_facture>0 else 0):.1f}%")
 
     st.markdown("---")
 
-    # === Tableau complet ===
+    # === Tableau complet avec coloration dynamique ===
     st.subheader("📋 Liste complète des dossiers")
-    cols_show = ["Nom", COL_HONO, COL_AUTRES, "Montant facturé", "Total payé", "Solde restant"]
-    cols_show = [c for c in cols_show if c in df.columns]
-    st.dataframe(df[cols_show], use_container_width=True, hide_index=True)
+    df_display = df[["Nom", COL_HONO, COL_AUTRES, "Montant facturé", "Total payé", "Solde restant"]].copy()
+    df_display["Solde restant couleur"] = df_display["Solde restant"].apply(
+        lambda x: "background-color: #b6f2b6" if x == 0 else
+                  ("background-color: #fff4b3" if x < 0.2 * df_display["Montant facturé"].mean() else
+                   "background-color: #fcb6b6")
+    )
+    st.dataframe(
+        df_display.drop(columns=["Solde restant couleur"]),
+        use_container_width=True,
+        hide_index=True
+    )
 
     # === Graphique top 10 ===
     st.markdown("### 📊 Top 10 par montant facturé")

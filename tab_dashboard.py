@@ -65,6 +65,7 @@ def main():
     total_facture = df["Montant facturé"].sum()
     total_paye = df["Total payé"].sum()
     solde_restant = df["Solde restant"].sum()
+    pourcent_paye = total_paye / total_facture * 100 if total_facture > 0 else 0
 
     # --- Style KPI réduits ---
     st.markdown("""
@@ -74,36 +75,34 @@ def main():
         </style>
     """, unsafe_allow_html=True)
 
-    # === Ligne 1 : détails ===
-    st.markdown("### 💼 Détail des montants")
-    c1, c2, c3 = st.columns(3)
-    c1.metric("👥 Clients", f"{total_clients}")
-    c2.metric("💵 Montant honoraires", f"{total_hono:,.2f} US$")
-    c3.metric("🧾 Autres frais", f"{total_autres:,.2f} US$")
-
-    # === Ligne 2 : synthèse ===
+    # === Synthèse financière sur une seule ligne ===
     st.markdown("### 📈 Synthèse financière")
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("💰 Montant facturé", f"{total_facture:,.2f} US$")
-    col2.metric("💸 Total payé", f"{total_paye:,.2f} US$")
-    # Mise en couleur automatique du solde
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
+
+    c1.metric("👥 Clients", f"{total_clients}")
+    c2.metric("💼 Honoraires", f"{total_hono:,.2f} US$")
+    c3.metric("🧾 Autres frais", f"{total_autres:,.2f} US$")
+    c4.metric("💰 Montant facturé", f"{total_facture:,.2f} US$")
+    c5.metric("💸 Total payé", f"{total_paye:,.2f} US$")
+
     color = "green" if solde_restant == 0 else ("orange" if solde_restant < 0.2 * total_facture else "red")
     solde_html = f"<span style='color:{color};font-weight:bold'>{solde_restant:,.2f} US$</span>"
-    col3.markdown(f"<div style='font-size:0.9rem;'>🧾 Solde restant<br>{solde_html}</div>", unsafe_allow_html=True)
-    col4.metric("📊 % Payé", f"{(total_paye/total_facture*100 if total_facture>0 else 0):.1f}%")
+    c6.markdown(f"<div style='font-size:0.9rem;'>🧾 Solde restant<br>{solde_html}</div>", unsafe_allow_html=True)
 
     st.markdown("---")
 
     # === Tableau complet avec coloration dynamique ===
     st.subheader("📋 Liste complète des dossiers")
     df_display = df[["Nom", COL_HONO, COL_AUTRES, "Montant facturé", "Total payé", "Solde restant"]].copy()
-    df_display["Solde restant couleur"] = df_display["Solde restant"].apply(
-        lambda x: "background-color: #b6f2b6" if x == 0 else
-                  ("background-color: #fff4b3" if x < 0.2 * df_display["Montant facturé"].mean() else
-                   "background-color: #fcb6b6")
-    )
+    def _row_color(x):
+        if x["Solde restant"] == 0:
+            return ['background-color: #b6f2b6'] * len(x)
+        elif x["Solde restant"] < 0.2 * x["Montant facturé"]:
+            return ['background-color: #fff4b3'] * len(x)
+        else:
+            return ['background-color: #fcb6b6'] * len(x)
     st.dataframe(
-        df_display.drop(columns=["Solde restant couleur"]),
+        df_display.style.apply(_row_color, axis=1),
         use_container_width=True,
         hide_index=True
     )

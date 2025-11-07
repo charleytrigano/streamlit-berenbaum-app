@@ -1,17 +1,14 @@
-# app.py — version complète multi-feuilles
+# app.py — Version finale multi-feuilles avec Dashboard intelligent
 
 import streamlit as st
 import pandas as pd
 from pathlib import Path
 
-
 # === PARAMÈTRES GLOBAUX ======================================================
 DEFAULT_XLSX = "Clients BL.xlsx"
-
 st.set_page_config(page_title="Visa Manager", layout="wide")
 
-
-# === 1. Chargement complet du fichier Excel ==================================
+# === 1. CHARGEMENT COMPLET DU FICHIER EXCEL =================================
 @st.cache_data(show_spinner=False)
 def _read_all_sheets():
     """Lit toutes les feuilles du fichier Excel et les retourne sous forme de dict."""
@@ -34,12 +31,37 @@ def _read_all_sheets():
         st.error(f"Erreur lecture « {DEFAULT_XLSX} » : {e}")
         return {}
 
-
 if "data_xlsx" not in st.session_state:
     st.session_state["data_xlsx"] = _read_all_sheets()
 
 
-# === 2. Onglet FICHIERS ======================================================
+# === 2. OUTILS NUMÉRIQUES ====================================================
+def _clean_number_series(s: pd.Series) -> pd.Series:
+    """Nettoie les séries de montants (texte → float)."""
+    if s is None:
+        return pd.Series(dtype=float)
+    s = s.astype(str)
+    s = (
+        s.str.replace("\u202f", "", regex=False)
+         .str.replace("\xa0", "", regex=False)
+         .str.replace(" ", "", regex=False)
+         .str.replace(r"[^\d\-,\.]", "", regex=True)
+    )
+    both = s.str.contains(r"\.") & s.str.contains(r",")
+    s = s.where(~both, s.str.replace(",", "", regex=False))
+    only_comma = s.str.contains(r",") & ~both
+    s = s.where(~only_comma, s.str.replace(",", ".", regex=False))
+    s = s.replace("", "0")
+    return pd.to_numeric(s, errors="coerce").fillna(0.0)
+
+def _ensure_cols(df: pd.DataFrame, cols):
+    for c in cols:
+        if c not in df.columns:
+            df[c] = 0.0
+    return df
+
+
+# === 3. ONGLET FICHIERS ======================================================
 def tab_fichiers():
     st.header("📄 Fichiers")
 
@@ -67,9 +89,7 @@ def tab_fichiers():
         if up is not None:
             try:
                 xls = pd.ExcelFile(up)
-                data = {}
-                for s in xls.sheet_names:
-                    data[s] = pd.read_excel(xls, s)
+                data = {s: pd.read_excel(xls, s) for s in xls.sheet_names}
                 st.session_state["data_xlsx"] = data
                 st.success(f"{len(data)} feuille(s) importée(s).")
                 st.rerun()
@@ -77,31 +97,7 @@ def tab_fichiers():
                 st.error(f"Erreur import : {e}")
 
 
-# === 3. OUTILS NUMÉRIQUES ====================================================
-def _clean_number_series(s: pd.Series) -> pd.Series:
-    if s is None:
-        return pd.Series(dtype=float)
-    s = s.astype(str)
-    s = (
-        s.str.replace("\u202f", "", regex=False)
-         .str.replace("\xa0", "", regex=False)
-         .str.replace(" ", "", regex=False)
-         .str.replace(r"[^\d\-,\.]", "", regex=True)
-    )
-    both = s.str.contains(r"\.") & s.str.contains(r",")
-    s = s.where(~both, s.str.replace(",", "", regex=False))
-    only_comma = s.str.contains(r",") & ~both
-    s = s.where(~only_comma, s.str.replace(",", ".", regex=False))
-    s = s.replace("", "0")
-    return pd.to_numeric(s, errors="coerce").fillna(0.0)
-
-def _ensure_cols(df: pd.DataFrame, cols):
-    for c in cols:
-        if c not in df.columns:
-            df[c] = 0.0
-    return df
-
-
+# === 4. ONGLET DASHBOARD =====================================================
 def tab_dashboard():
     st.header("📊 Tableau de bord")
 
@@ -117,7 +113,6 @@ def tab_dashboard():
             target_sheet = s
             break
     if target_sheet is None:
-        # fallback: première feuille du classeur
         target_sheet = list(data.keys())[0]
         st.info(f"Feuille 'Clients' introuvable, utilisation de « {target_sheet} ».")
 

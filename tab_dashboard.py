@@ -1,14 +1,13 @@
 import streamlit as st
 import pandas as pd
-import re
 
-# === Nettoyage des montants ===
+# ---------- Utils ----------
 def _clean_number_series(s: pd.Series) -> pd.Series:
-    """Nettoie et convertit une série de valeurs monétaires en float."""
     if s is None:
         return pd.Series(dtype=float)
     s = s.astype(str)
     neg_mask = s.str.contains(r"^\s*\(.*\)\s*$")
+
     s = (
         s.str.replace("\u202f", "", regex=False)
          .str.replace("\xa0", "", regex=False)
@@ -24,14 +23,19 @@ def _clean_number_series(s: pd.Series) -> pd.Series:
     out = out.where(~neg_mask, -out)
     return out
 
-# === Sécurisation colonnes ===
 def _ensure_cols(df: pd.DataFrame, cols) -> pd.DataFrame:
     for c in cols:
         if c not in df.columns:
             df[c] = 0.0
     return df
 
-# === Tableau de bord ===
+def _first_existing(df: pd.DataFrame, candidates):
+    for c in candidates:
+        if c in df.columns:
+            return c
+    return None
+
+# ---------- Main ----------
 def main():
     st.header("📊 Tableau de bord")
 
@@ -40,220 +44,170 @@ def main():
         st.warning("Aucune donnée disponible. Chargez un fichier dans l’onglet 📄 Fichiers.")
         return
 
-    COL_HONO = "Montant honoraires (US $)"
+    # Colonnes clés chiffrées
+    COL_HONO   = "Montant honoraires (US $)"
     COL_AUTRES = "Autres frais (US $)"
-    AC_COLS = ["Acompte 1", "Acompte 2", "Acompte 3", "Acompte 4"]
+    AC_COLS    = ["Acompte 1", "Acompte 2", "Acompte 3", "Acompte 4"]
+
+    # Colonnes d’info/filtre (on détecte au mieux)
+    COL_NOM   = _first_existing(df_src, ["Nom", "Client", "Client Name"])
+    COL_CAT   = _first_existing(df_src, ["Catégorie", "Categorie", "Category"])
+    COL_SUB   = _first_existing(df_src, ["Sous-catégorie", "Sous categorie", "Sous catégorie", "Subcategory"])
+    COL_VISA  = _first_existing(df_src, ["Type de visa", "Visa", "Type Visa"])
+    COL_DATE  = _first_existing(df_src, ["Date dossier", "Date", "Date envoi", "Date Dossier"])
 
     df = df_src.copy()
-    needed = [COL_HONO, COL_AUTRES] + AC_COLS
-    df = _ensure_cols(df, needed)
 
-    # Nettoyage
-    df[COL_HONO] = _clean_number_series(df[COL_HONO])
+    # Sécuriser colonnes numériques
+    df = _ensure_cols(df, [COL_HONO, COL_AUTRES] + AC_COLS)
+
+    # Nettoyage valeurs numériques
+    df[COL_HONO]   = _clean_number_series(df[COL_HONO])
     df[COL_AUTRES] = _clean_number_series(df[COL_AUTRES])
     for c in AC_COLS:
         df[c] = _clean_number_series(df[c])
 
-    # Calculs
+    # Date → Année / Mois si dispo
+    if COL_DATE:
+        df[COL_DATE] = pd.to_datetime(df[COL_DATE], errors="coerce")
+        df["__Année__"] = df[COL_DATE].dt.year
+        # Mois texte FR : fallback si locale indisponible
+        df["__Mois__"] = df[COL_DATE].dt.month
+        mois_labels = {
+            1:"Janvier",2:"Février",3:"Mars",4:"Avril",5:"Mai",6:"Juin",
+            7:"Juillet",8:"Août",9:"Septembre",10:"Octobre",11:"Novembre",12:"Décembre"
+        }
+        df["__Mois__"] = df["__Mois__"].map(mois_labels)
+    else:
+        df["__Année__"] = pd.NA
+        df["__Mois__"]  = pd.NA
+
+    # Calculs de base
     df["Montant facturé"] = df[COL_HONO] + df[COL_AUTRES]
-    df["Total payé"] = df[AC_COLS].sum(axis=1)
-    df["Solde restant"] = df["Montant facturé"] - df["Total payé"]
+    df["Total payé"]      = df[AC_COLS].sum(axis=1)
+    df["Solde restant"]   = df["Montant facturé"] - df["Total payé"]
 
-    total_clients = len(df)
-    total_hono = df[COL_HONO].sum()
-    total_autres = df[COL_AUTRES].sum()
-    total_facture = df["Montant facturé"].sum()
-    total_paye = df["Total payé"].sum()
-    solde_restant = df["Solde restant"].sum()
-    pourcent_paye = total_paye / total_facture * 100 if total_facture > 0 else 0
+    # ---------- Filtres ----------
+    st.markdown("### 🔍 Filtres")
 
-    # --- Style KPI réduits ---
+    cols_filters = st.columns(5)
+    # On ne montre un filtre que si la colonne existe, sinon multiselect vide (désactivé)
+    opts_cat   = sorted(df[COL_CAT].dropna().unique()) if COL_CAT and df[COL_CAT].notna().any() else []
+    opts_sub   = sorted(df[COL_SUB].dropna().unique()) if COL_SUB and df[COL_SUB].notna().any() else []
+    opts_visa  = sorted(df[COL_VISA].dropna().unique()) if COL_VISA and df[COL_VISA].notna().any() else []
+    opts_year  = sorted(df["__Année__"].dropna().unique()) if df["__Année__"].notna().any() else []
+    opts_month = [m for m in ["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"]
+                  if m in set(df["__Mois__"].dropna().unique())]
+
+    sel_cat   = cols_filters[0].multiselect("Catégorie", opts_cat, default=[])
+    sel_sub   = cols_filters[1].multiselect("Sous-catégorie", opts_sub, default=[])
+    sel_visa  = cols_filters[2].multiselect("Visa", opts_visa, default=[])
+    sel_year  = cols_filters[3].multiselect("Année", opts_year, default=[])
+    sel_month = cols_filters[4].multiselect("Mois", opts_month, default=[])
+
+    filt = pd.Series(True, index=df.index)
+    if sel_cat   and COL_CAT:  filt &= df[COL_CAT].isin(sel_cat)
+    if sel_sub   and COL_SUB:  filt &= df[COL_SUB].isin(sel_sub)
+    if sel_visa  and COL_VISA: filt &= df[COL_VISA].isin(sel_visa)
+    if sel_year:               filt &= df["__Année__"].isin(sel_year)
+    if sel_month:              filt &= df["__Mois__"].isin(sel_month)
+
+    df_f = df[filt].copy()
+
+    # ---------- KPI petits / une ligne ----------
     st.markdown("""
         <style>
-        div[data-testid="stMetricValue"] {font-size:0.9rem !important;}
-        div[data-testid="stMetricLabel"] {font-size:0.75rem !important;}
+        div[data-testid="stMetricValue"] {font-size:0.85rem !important;}
+        div[data-testid="stMetricLabel"] {font-size:0.70rem !important;}
+        section.main > div {padding-top: 0.5rem;}
         </style>
     """, unsafe_allow_html=True)
 
-    # === Synthèse financière sur une seule ligne ===
     st.markdown("### 📈 Synthèse financière")
-    c1, c2, c3, c4, c5, c6 = st.columns(6)
+    k1,k2,k3,k4,k5,k6 = st.columns(6)
+    total_clients = int(len(df_f))
+    total_hono    = float(df_f[COL_HONO].sum())
+    total_autres  = float(df_f[COL_AUTRES].sum())
+    total_fact    = float(df_f["Montant facturé"].sum())
+    total_paye    = float(df_f["Total payé"].sum())
+    total_solde   = float(df_f["Solde restant"].sum())
 
-    c1.metric("👥 Clients", f"{total_clients}")
-    c2.metric("💼 Honoraires", f"{total_hono:,.2f} US$")
-    c3.metric("🧾 Autres frais", f"{total_autres:,.2f} US$")
-    c4.metric("💰 Montant facturé", f"{total_facture:,.2f} US$")
-    c5.metric("💸 Total payé", f"{total_paye:,.2f} US$")
-
-    color = "green" if solde_restant == 0 else ("orange" if solde_restant < 0.2 * total_facture else "red")
-    solde_html = f"<span style='color:{color};font-weight:bold'>{solde_restant:,.2f} US$</span>"
-    c6.markdown(f"<div style='font-size:0.9rem;'>🧾 Solde restant<br>{solde_html}</div>", unsafe_allow_html=True)
+    k1.metric("👥 Clients", f"{total_clients}")
+    k2.metric("💼 Honoraires", f"{total_hono:,.2f} US$")
+    k3.metric("🧾 Autres frais", f"{total_autres:,.2f} US$")
+    k4.metric("💰 Montant facturé", f"{total_fact:,.2f} US$")
+    k5.metric("💸 Total payé", f"{total_paye:,.2f} US$")
+    k6.metric("🧾 Solde restant", f"{total_solde:,.2f} US$")
 
     st.markdown("---")
 
-    # === Tableau complet avec coloration dynamique ===
-    st.subheader("📋 Liste complète des dossiers")
-    df_display = df[["Nom", COL_HONO, COL_AUTRES, "Montant facturé", "Total payé", "Solde restant"]].copy()
-    def _row_color(x):
-        if x["Solde restant"] == 0:
-            return ['background-color: #b6f2b6'] * len(x)
-        elif x["Solde restant"] < 0.2 * x["Montant facturé"]:
-            return ['background-color: #fff4b3'] * len(x)
-        else:
-            return ['background-color: #fcb6b6'] * len(x)
-    st.dataframe(
-        df_display.style.apply(_row_color, axis=1),
-        use_container_width=True,
-        hide_index=True
-    )
+    # ---------- Tableau des dossiers (filtrés) ----------
+    st.subheader("📋 Dossiers (après filtres)")
+    cols_show = [c for c in [COL_NOM, COL_HONO, COL_AUTRES, "Montant facturé", "Total payé", "Solde restant"] if c]
+    if not cols_show:
+        cols_show = ["Montant facturé", "Total payé", "Solde restant"]
+    st.dataframe(df_f[cols_show], use_container_width=True, hide_index=True)
 
-    # === Graphique top 10 ===
-    st.markdown("### 📊 Top 10 par montant facturé")
-    top10 = df.nlargest(10, "Montant facturé")
-    if "Nom" in top10.columns:
-        st.bar_chart(top10.set_index("Nom")["Montant facturé"])
+    # ---------- Comparatif de périodes ----------
+    st.markdown("---")
+    st.subheader("📆 Comparatif entre périodes (tableau)")
+
+    if df["__Année__"].notna().any():
+        colA, colB = st.columns(2)
+        years = sorted(df["__Année__"].dropna().unique())
+        year_a = colA.selectbox("Période A (Année)", years, index=0, key="cmpA")
+        year_b = colB.selectbox("Période B (Année)", years, index=min(1, len(years)-1), key="cmpB")
+
+        A = df_f[df_f["__Année__"] == year_a]
+        B = df_f[df_f["__Année__"] == year_b]
+
+        def stats(x):
+            return pd.Series({
+                "Clients": len(x),
+                "Honoraires (US$)": x[COL_HONO].sum(),
+                "Autres frais (US$)": x[COL_AUTRES].sum(),
+                "Montant facturé (US$)": x["Montant facturé"].sum(),
+                "Total payé (US$)": x["Total payé"].sum(),
+                "Solde restant (US$)": x["Solde restant"].sum(),
+            })
+
+        tA = stats(A)
+        tB = stats(B)
+        comp = pd.DataFrame({
+            "Indicateur": tA.index,
+            f"{int(year_a)}": tA.values,
+            f"{int(year_b)}": tB.values,
+            "Δ (B - A)": (tB - tA).values,
+            "Δ %": ((tB - tA) / tA.replace(0, pd.NA) * 100).astype(float).round(2).astype(str).replace("<NA>", "—")
+        })
+        st.dataframe(comp, use_container_width=True, hide_index=True)
     else:
-        st.bar_chart(top10["Montant facturé"])
+        st.info("Pas de colonne de date détectée : comparatif par période indisponible.")
 
-import streamlit as st
-import pandas as pd
-import re
-
-# === Nettoyage des montants ===
-def _clean_number_series(s: pd.Series) -> pd.Series:
-    """Nettoie et convertit une série de valeurs monétaires en float."""
-    if s is None:
-        return pd.Series(dtype=float)
-    s = s.astype(str)
-    neg_mask = s.str.contains(r"^\s*\(.*\)\s*$")
-    s = (
-        s.str.replace("\u202f", "", regex=False)
-         .str.replace("\xa0", "", regex=False)
-         .str.replace(" ", "", regex=False)
-         .str.replace(r"[^\d\-,\.]", "", regex=True)
-    )
-    both = s.str.contains(r"\.") & s.str.contains(r",")
-    s = s.where(~both, s.str.replace(",", "", regex=False))
-    only_comma = s.str.contains(r",") & ~both
-    s = s.where(~only_comma, s.str.replace(",", ".", regex=False))
-    s = s.replace("", "0")
-    out = pd.to_numeric(s, errors="coerce").fillna(0.0)
-    out = out.where(~neg_mask, -out)
-    return out
-
-# === Sécurisation colonnes ===
-def _ensure_cols(df: pd.DataFrame, cols) -> pd.DataFrame:
-    for c in cols:
-        if c not in df.columns:
-            df[c] = 0.0
-    return df
-
-
-# === Tableau de bord principal ===
-def main():
-    st.header("📊 Tableau de bord")
-
-    df_src = st.session_state.get("clients_df")
-    if df_src is None or df_src.empty:
-        st.warning("Aucune donnée disponible. Chargez un fichier dans l’onglet 📄 Fichiers.")
-        return
-
-    # Colonnes clés
-    COL_HONO = "Montant honoraires (US $)"
-    COL_AUTRES = "Autres frais (US $)"
-    AC_COLS = ["Acompte 1", "Acompte 2", "Acompte 3", "Acompte 4"]
-
-    # Colonnes potentielles de filtre
-    CAT_COL = "Catégorie"
-    SUBCAT_COL = "Sous-catégorie"
-    VISA_COL = "Type de visa"
-    DATE_COL = "Date dossier"
-
-    df = df_src.copy()
-    df = _ensure_cols(df, [COL_HONO, COL_AUTRES] + AC_COLS)
-
-    # Nettoyage et calculs
-    df[COL_HONO] = _clean_number_series(df[COL_HONO])
-    df[COL_AUTRES] = _clean_number_series(df[COL_AUTRES])
-    for c in AC_COLS:
-        df[c] = _clean_number_series(df[c])
-
-    df["Montant facturé"] = df[COL_HONO] + df[COL_AUTRES]
-    df["Total payé"] = df[AC_COLS].sum(axis=1)
-    df["Solde restant"] = df["Montant facturé"] - df["Total payé"]
-
-    # Conversion des dates si présentes
-    if DATE_COL in df.columns:
-        df["Date dossier"] = pd.to_datetime(df["Date dossier"], errors="coerce")
-        df["Année"] = df["Date dossier"].dt.year
-        df["Mois"] = df["Date dossier"].dt.month_name(locale="fr_FR")
-
-    # === Filtres interactifs ===
-    st.markdown("### 🔍 Filtres")
-    f1, f2, f3, f4, f5 = st.columns(5)
-
-    cat = f1.multiselect("Catégorie", sorted(df[CAT_COL].dropna().unique()) if CAT_COL in df.columns else [])
-    subcat = f2.multiselect("Sous-catégorie", sorted(df[SUBCAT_COL].dropna().unique()) if SUBCAT_COL in df.columns else [])
-    visa = f3.multiselect("Visa", sorted(df[VISA_COL].dropna().unique()) if VISA_COL in df.columns else [])
-    annee = f4.multiselect("Année", sorted(df["Année"].dropna().unique()) if "Année" in df.columns else [])
-    mois = f5.multiselect("Mois", sorted(df["Mois"].dropna().unique()) if "Mois" in df.columns else [])
-
-    filt = pd.Series([True] * len(df))
-    if cat: filt &= df[CAT_COL].isin(cat)
-    if subcat: filt &= df[SUBCAT_COL].isin(subcat)
-    if visa: filt &= df[VISA_COL].isin(visa)
-    if annee: filt &= df["Année"].isin(annee)
-    if mois: filt &= df["Mois"].isin(mois)
-    df_filt = df[filt].copy()
-
-    # === Sélection comparatif ===
-    st.markdown("### 📆 Comparatif de périodes")
-    colA, colB = st.columns(2)
-    years = sorted(df["Année"].dropna().unique()) if "Année" in df.columns else []
-    year_a = colA.selectbox("Période A (année)", years, key="comp_a")
-    year_b = colB.selectbox("Période B (année)", years, key="comp_b")
-
-    dfA = df[df["Année"] == year_a] if "Année" in df.columns else df.copy()
-    dfB = df[df["Année"] == year_b] if "Année" in df.columns else df.copy()
-
-    def calc_stats(df_):
-        return {
-            "Clients": len(df_),
-            "Facturé": df_["Montant facturé"].sum(),
-            "Payé": df_["Total payé"].sum(),
-            "Solde": df_["Solde restant"].sum(),
-        }
-
-    statsA, statsB = calc_stats(dfA), calc_stats(dfB)
-
-    delta_facture = statsB["Facturé"] - statsA["Facturé"]
-    delta_paye = statsB["Payé"] - statsA["Payé"]
-
-    # === Synthèse financière sur une seule ligne ===
-    st.markdown("### 📈 Synthèse financière (filtres appliqués)")
-    c1, c2, c3, c4, c5, c6 = st.columns(6)
-
-    c1.metric("👥 Clients", len(df_filt))
-    c2.metric("💼 Honoraires", f"{df_filt[COL_HONO].sum():,.2f} US$")
-    c3.metric("🧾 Autres frais", f"{df_filt[COL_AUTRES].sum():,.2f} US$")
-    c4.metric("💰 Montant facturé", f"{df_filt['Montant facturé'].sum():,.2f} US$")
-    c5.metric("💸 Total payé", f"{df_filt['Total payé'].sum():,.2f} US$")
-    c6.metric("💣 Solde restant", f"{df_filt['Solde restant'].sum():,.2f} US$")
-
-    # === Comparatif ===
+    # ---------- Top 10 en tableau (et comparatif) ----------
     st.markdown("---")
-    st.subheader("📊 Comparatif entre périodes")
-    st.write(f"**{year_a}** → Facturé : {statsA['Facturé']:,.2f} | Payé : {statsA['Payé']:,.2f}")
-    st.write(f"**{year_b}** → Facturé : {statsB['Facturé']:,.2f} | Payé : {statsB['Payé']:,.2f}")
-    st.write(f"🟢 Évolution du facturé : {delta_facture:+,.2f} US$")
-    st.write(f"💵 Évolution du payé : {delta_paye:+,.2f} US$")
+    st.subheader("🏆 Top 10 par Montant facturé (table)")
 
-    # === Top 10 liste ===
-    st.markdown("---")
-    st.subheader("🏆 Top 10 par montant facturé")
-    top10 = df_filt.nlargest(10, "Montant facturé")[["Nom", "Montant facturé", "Total payé", "Solde restant"]]
-    for i, row in top10.iterrows():
-        st.markdown(
-            f"**{row['Nom']}** — Facturé: {row['Montant facturé']:,.2f} US$ | "
-            f"Payé: {row['Total payé']:,.2f} US$ | Solde: {row['Solde restant']:,.2f} US$"
-        )
+    top10 = df_f.sort_values("Montant facturé", ascending=False)
+    top10 = top10[[COL_NOM, "Montant facturé", "Total payé", "Solde restant"]].head(10) if COL_NOM else \
+            top10[["Montant facturé", "Total payé", "Solde restant"]].head(10)
+    st.dataframe(top10, use_container_width=True, hide_index=True)
+
+    # Comparatif Top 10 A vs B (si années)
+    if df["__Année__"].notna().any():
+        st.markdown("#### 🔀 Comparatif Top 10 — Période A vs Période B")
+        A10 = df_f[df_f["__Année__"] == year_a].sort_values("Montant facturé", ascending=False)
+        B10 = df_f[df_f["__Année__"] == year_b].sort_values("Montant facturé", ascending=False)
+
+        A10 = A10[[COL_NOM, "Montant facturé", "Total payé", "Solde restant"]].head(10) if COL_NOM else \
+              A10[["Montant facturé", "Total payé", "Solde restant"]].head(10)
+        B10 = B10[[COL_NOM, "Montant facturé", "Total payé", "Solde restant"]].head(10) if COL_NOM else \
+              B10[["Montant facturé", "Total payé", "Solde restant"]].head(10)
+
+        colL, colR = st.columns(2)
+        with colL:
+            st.markdown(f"**Top 10 — {int(year_a)}**")
+            st.dataframe(A10, use_container_width=True, hide_index=True)
+        with colR:
+            st.markdown(f"**Top 10 — {int(year_b)}**")
+            st.dataframe(B10, use_container_width=True, hide_index=True)

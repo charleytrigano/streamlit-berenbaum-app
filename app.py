@@ -1,4 +1,5 @@
-# app.py — Version finale multi-feuilles avec Dashboard intelligent
+# app.py — Version stable multi-feuilles
+# Lecture forcée de la feuille "Clients" pour le Dashboard
 
 import streamlit as st
 import pandas as pd
@@ -106,19 +107,15 @@ def tab_dashboard():
         st.warning("Aucune donnée Excel disponible.")
         return
 
-    # 🔍 Recherche de la feuille "Clients" ou équivalent
-    target_sheet = None
-    for s in data.keys():
-        if "client" in s.lower():
-            target_sheet = s
-            break
-    if target_sheet is None:
-        target_sheet = list(data.keys())[0]
-        st.info(f"Feuille 'Clients' introuvable, utilisation de « {target_sheet} ».")
+    # 🔍 Lecture forcée de la feuille 'Clients'
+    if "Clients" in data:
+        df = data["Clients"].copy()
+    else:
+        st.error("Feuille 'Clients' introuvable dans le fichier Excel.")
+        st.stop()
 
-    df = data[target_sheet].copy()
     if df.empty:
-        st.warning("La feuille sélectionnée est vide.")
+        st.warning("La feuille 'Clients' est vide ou mal formatée.")
         return
 
     # Colonnes importantes

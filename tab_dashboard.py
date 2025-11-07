@@ -9,41 +9,56 @@ def main():
         st.warning("Aucune donnée disponible. Chargez un fichier dans l’onglet 📄 Fichiers.")
         return
 
-    # 🔍 Détection automatique de la colonne Montant
+    # 🔍 Détection automatique des colonnes financières
     montant_col = None
+    paye_col = None
+
     for c in df.columns:
-        if "honoraires" in c.lower() or "montant" in c.lower():
+        c_low = c.lower()
+        if "honoraires" in c_low or ("montant" in c_low and "pay" not in c_low):
             montant_col = c
-            break
+        if "pay" in c_low or "acompte" in c_low:
+            paye_col = c
 
     if montant_col is None:
-        st.error("❌ Impossible de trouver une colonne contenant 'Montant' ou 'Honoraires'.")
-        st.dataframe(df.head(), use_container_width=True)
+        st.error("❌ Impossible de trouver la colonne 'Montant honoraires (US $)'.")
         return
 
-    # 🧮 Nettoyage et conversion en numérique
-    df[montant_col] = (
-        df[montant_col]
-        .astype(str)
-        .str.replace(r"[^0-9\.\-]", "", regex=True)
-        .replace("", "0")
-        .astype(float)
-    )
+    # 🧹 Conversion en float (sécurité)
+    def clean_num(s):
+        try:
+            return float(str(s).replace(",", "").replace("$", "").strip())
+        except:
+            return 0.0
 
-    # --- KPIs ---
-    st.subheader("📈 Indicateurs clés")
-    col1, col2, col3 = st.columns(3)
-    col1.metric("👥 Nombre total de clients", len(df))
-    col2.metric("💰 Montant total facturé", f"{df[montant_col].sum():,.2f} US$")
-    col3.metric("💵 Montant moyen", f"{df[montant_col].mean():,.2f} US$")
+    df[montant_col] = df[montant_col].map(clean_num)
+    if paye_col:
+        df[paye_col] = df[paye_col].map(clean_num)
+    else:
+        df["__PAYE__"] = 0.0
+        paye_col = "__PAYE__"
+
+    # 💰 Calcul des indicateurs
+    total_facture = df[montant_col].sum()
+    total_paye = df[paye_col].sum()
+    solde = total_facture - total_paye
+
+    # 📊 Petits KPI (sur une ligne compacte)
+    st.markdown("### 📈 Indicateurs financiers")
+    c1, c2, c3, c4 = st.columns(4)
+
+    c1.metric("👥 Clients", f"{len(df)}")
+    c2.metric("💰 Total facturé", f"{total_facture:,.2f} US$")
+    c3.metric("💵 Total payé", f"{total_paye:,.2f} US$")
+    c4.metric("🧾 Solde restant", f"{solde:,.2f} US$")
 
     st.markdown("---")
 
-    # --- Aperçu du tableau ---
-    st.subheader("📋 Aperçu des dossiers")
+    # 📋 Tableau récapitulatif
+    st.subheader("Aperçu des 10 premiers dossiers")
     st.dataframe(df.head(10), use_container_width=True)
 
-    # --- Graphique optionnel ---
-    st.markdown("### 📊 Répartition des montants (Top 10)")
+    # 📊 Graphique top 10 clients
+    st.markdown("### 📊 Top 10 des montants facturés")
     top10 = df.nlargest(10, montant_col)
     st.bar_chart(top10.set_index(top10.columns[0])[montant_col])

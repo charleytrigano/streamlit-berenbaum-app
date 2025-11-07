@@ -41,6 +41,18 @@ def main():
 
     df_src = st.session_state.get("clients_df")
     if df_src is None or df_src.empty:
+            # Fallback : si rien en mémoire, tenter de charger automatiquement le défaut
+    if (df_src is None) or df_src.empty:
+        try:
+            from pathlib import Path
+            import pandas as pd
+            xls = pd.ExcelFile("Clients BL.xlsx")
+            sheet = "Clients" if "Clients" in xls.sheet_names else xls.sheet_names[0]
+            df_src = pd.read_excel(xls, sheet)
+            st.session_state["clients_df"] = df_src
+        except Exception:
+            pass
+
         st.warning("Aucune donnée disponible. Chargez un fichier dans l’onglet 📄 Fichiers.")
         return
 
@@ -211,3 +223,4 @@ def main():
         with colR:
             st.markdown(f"**Top 10 — {int(year_b)}**")
             st.dataframe(B10, use_container_width=True, hide_index=True)
+

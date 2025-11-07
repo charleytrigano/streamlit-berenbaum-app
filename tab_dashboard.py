@@ -9,8 +9,9 @@ def main():
         st.warning("Aucune donnée disponible. Chargez un fichier dans l’onglet 📄 Fichiers.")
         return
 
-    # Vérifie que les colonnes existent
+    # ✅ Colonnes nécessaires
     required_cols = [
+        "Nom",
         "Montant honoraires (US $)",
         "Autres frais (US $)",
         "Acompte 1",
@@ -23,48 +24,55 @@ def main():
             st.error(f"❌ Colonne manquante : '{col}'")
             return
 
-    # 🧮 Conversion en float (sécurisée)
+    # 🧮 Conversion propre en float
     def to_float(x):
         try:
             return float(str(x).replace(",", "").replace("$", "").strip())
         except:
             return 0.0
 
-    for col in required_cols:
+    for col in required_cols[1:]:
         df[col] = df[col].map(to_float)
 
-    # Calculs financiers
+    # 📊 Calculs globaux
     df["Montant facturé"] = df["Montant honoraires (US $)"] + df["Autres frais (US $)"]
     df["Total payé"] = df["Acompte 1"] + df["Acompte 2"] + df["Acompte 3"] + df["Acompte 4"]
     df["Solde restant"] = df["Montant facturé"] - df["Total payé"]
 
-    # Agrégats
+    # --- Agrégats sur TOUT le fichier ---
+    total_clients = len(df)
     total_facture = df["Montant facturé"].sum()
     total_paye = df["Total payé"].sum()
     solde_restant = df["Solde restant"].sum()
 
-    # 📊 KPI sur une seule ligne compacte
+    # 📈 KPIs compactes
     st.markdown("### 📈 Indicateurs financiers")
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("👥 Nombre de clients", len(df))
+    col1.metric("👥 Clients", f"{total_clients}")
     col2.metric("💰 Montant facturé", f"{total_facture:,.2f} US$")
     col3.metric("💵 Total payé", f"{total_paye:,.2f} US$")
     col4.metric("🧾 Solde restant", f"{solde_restant:,.2f} US$")
 
     st.markdown("---")
 
-    # 📋 Tableau résumé
-    st.subheader("📋 Aperçu des dossiers")
+    # 📋 Tableau complet (tout le fichier)
+    st.subheader("📋 Liste complète des dossiers")
     st.dataframe(
-        df[[
-            "Nom", "Montant honoraires (US $)", "Autres frais (US $)",
-            "Montant facturé", "Total payé", "Solde restant"
-        ]].head(10),
-        use_container_width=True
+        df[
+            [
+                "Nom",
+                "Montant honoraires (US $)",
+                "Autres frais (US $)",
+                "Montant facturé",
+                "Total payé",
+                "Solde restant"
+            ]
+        ],
+        use_container_width=True,
+        hide_index=True
     )
 
-    # 📊 Graphique top 10 par montant facturé
+    # 📊 Graphique top 10
     st.markdown("### 📊 Top 10 des clients par montant facturé")
     top10 = df.nlargest(10, "Montant facturé")
     st.bar_chart(top10.set_index("Nom")["Montant facturé"])
-

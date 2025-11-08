@@ -2,17 +2,16 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 
-# ---------- Helpers ----------
 def _norm_cols(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     mapping_candidates = {
         "Visa": ["visa", "type visa", "type_de_visa", "type-visa"],
-        "Catégorie": ["catégorie", "categorie", "catégorie ", "category"],
-        "Sous-catégorie": ["sous-catégorie", "sous categorie", "sous-categorie", "subcategory"],
+        "Catégorie": ["catégorie", "categorie", "category"],
+        "Sous-catégorie": ["sous-catégorie", "sous categorie", "subcategory"],
         "Année": ["année", "annee", "year"],
         "Mois": ["mois", "month"],
-        "Montant honoraires (US $)": ["montant honoraires (us $)", "honoraires", "montant honoraires"],
-        "Autres frais (US $)": ["autres frais (us $)", "autres frais"],
+        "Montant honoraires (US $)": ["montant honoraires", "honoraires"],
+        "Autres frais (US $)": ["autres frais"],
         "Acompte 1": ["acompte 1", "a1", "acompte1"],
         "Acompte 2": ["acompte 2", "a2", "acompte2"],
         "Acompte 3": ["acompte 3", "a3", "acompte3"],
@@ -29,7 +28,7 @@ def _norm_cols(df: pd.DataFrame) -> pd.DataFrame:
                 return lower2orig[cand]
         return None
 
-    # Renommer les colonnes connues
+    # Renommer colonnes
     for target, cands in mapping_candidates.items():
         if target == "_date_probe_":
             continue
@@ -38,18 +37,19 @@ def _norm_cols(df: pd.DataFrame) -> pd.DataFrame:
             if found:
                 df.rename(columns={found: target}, inplace=True)
 
-    # Colonnes numériques manquantes
-    for col in ["Montant honoraires (US $)", "Autres frais (US $)", "Acompte 1", "Acompte 2", "Acompte 3", "Acompte 4"]:
+    # Convertir en numériques
+    for col in ["Montant honoraires (US $)", "Autres frais (US $)",
+                "Acompte 1", "Acompte 2", "Acompte 3", "Acompte 4"]:
         if col not in df.columns:
             df[col] = 0
         df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
-    # Calculs principaux
+    # Calculs
     df["Montant facturé"] = df["Montant honoraires (US $)"] + df["Autres frais (US $)"]
     df["Total payé"] = df[["Acompte 1", "Acompte 2", "Acompte 3", "Acompte 4"]].sum(axis=1)
     df["Solde restant"] = df["Montant facturé"] - df["Total payé"]
 
-    # Gestion des dates pour Année / Mois
+    # Déduire Année / Mois
     mois_fr = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
                "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
 
@@ -59,13 +59,12 @@ def _norm_cols(df: pd.DataFrame) -> pd.DataFrame:
             if probe in lower2orig:
                 date_col = lower2orig[probe]
                 break
-
         if date_col is not None:
             parsed = pd.to_datetime(df[date_col], errors="coerce", dayfirst=True, infer_datetime_format=True)
             if "Année" not in df.columns:
                 df["Année"] = parsed.dt.year.fillna(0).astype(int).replace(0, "")
             if "Mois" not in df.columns:
-                df["Mois"] = parsed.dt.month.map(lambda x: mois_fr[int(x)-1] if 1 <= int(x) <= 12 else "")
+                df["Mois"] = parsed.dt.month.map(lambda x: mois_fr[int(x)-1] if pd.notna(x) and 1 <= int(x) <= 12 else "")
         else:
             if "Année" not in df.columns:
                 df["Année"] = ""
@@ -79,28 +78,27 @@ def _norm_cols(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-# ---------- Tableau de bord principal ----------
 def tab_dashboard():
-    """Tableau de bord principal - synthèse financière avec filtres robustes."""
+    """Tableau de bord principal avec filtres et indicateurs"""
     st.header("📊 Tableau de bord")
 
     if "data_xlsx" not in st.session_state or not st.session_state["data_xlsx"]:
-        st.warning("⚠️ Aucune donnée disponible. Chargez d'abord le fichier Excel via l'onglet '📄 Fichiers'.")
+        st.warning("⚠️ Chargez d'abord le fichier Excel via l'onglet '📄 Fichiers'.")
         return
 
     data = st.session_state["data_xlsx"]
     if "Clients" not in data:
-        st.error("❌ La feuille 'Clients' est absente du fichier Excel.")
+        st.error("❌ Feuille 'Clients' absente.")
         return
 
     df = data["Clients"].copy()
     if df.empty:
-        st.warning("📄 La feuille 'Clients' est vide.")
+        st.warning("📄 Feuille 'Clients' vide.")
         return
 
     df = _norm_cols(df)
 
-    # ==================== FILTRES ====================
+    # ---------- Filtres ----------
     st.markdown("### 🎯 Filtres")
     col1, col2, col3, col4, col5 = st.columns(5)
 
@@ -116,7 +114,6 @@ def tab_dashboard():
     annee = col4.selectbox("Année", _opts("Année", "(Toutes)"), key="dash_annee")
     mois = col5.selectbox("Mois", _opts("Mois", "(Tous)"), key="dash_mois")
 
-    # Application des filtres
     if categorie != "(Toutes)":
         df = df[df["Catégorie"] == categorie]
     if souscat != "(Toutes)":
@@ -130,7 +127,7 @@ def tab_dashboard():
 
     st.markdown("---")
 
-    # ==================== SYNTHÈSE FINANCIÈRE ====================
+    # ---------- KPI ----------
     st.subheader("📊 Synthèse financière")
     total_honoraire = df["Montant honoraires (US $)"].sum()
     total_autres = df["Autres frais (US $)"].sum()
@@ -147,7 +144,7 @@ def tab_dashboard():
 
     st.markdown("---")
 
-    # ==================== TABLEAU CLIENTS ====================
+    # ---------- Tableau clients ----------
     st.subheader("📋 Dossiers clients")
     colonnes_aff = [
         "Nom", "Visa", "Catégorie", "Sous-catégorie", "Année", "Mois",
@@ -155,16 +152,19 @@ def tab_dashboard():
         "Montant facturé", "Total payé", "Solde restant"
     ]
     cols_exist = [c for c in colonnes_aff if c in df.columns]
-    numeric_cols = df.select_dtypes(include=["number"]).columns
+    df_view = df[cols_exist].copy()
+
+    # Correction : formater uniquement les colonnes numériques présentes
+    numeric_cols = [c for c in df_view.columns if pd.api.types.is_numeric_dtype(df_view[c])]
     st.dataframe(
-        df[cols_exist].style.format(subset=numeric_cols, formatter="{:,.2f}"),
+        df_view.style.format(subset=numeric_cols, formatter="{:,.2f}"),
         use_container_width=True,
         height=420,
     )
 
     st.markdown("---")
 
-    # ==================== TOP 10 ====================
+    # ---------- Top 10 ----------
     st.subheader("🏆 Top 10 des dossiers (par montant facturé)")
     if "Montant facturé" in df.columns:
         top10 = df.nlargest(10, "Montant facturé")[["Nom", "Visa", "Montant facturé", "Total payé", "Solde restant"]]

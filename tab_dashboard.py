@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 
-# ===================== FONCTIONS UTILES =====================
+# ===================== UTILITAIRES =====================
 
 def _lower_map(columns):
     return {str(c).strip().lower(): c for c in columns}
@@ -43,10 +43,8 @@ def _norm_cols(df: pd.DataFrame) -> pd.DataFrame:
         "Visa": ["Visa", "Type visa", "visa"],
         "Catégorie": ["Catégorie", "Categories", "Categorie", "category", "Type dossier"],
         "Sous-catégorie": ["Sous-catégorie", "Sous categorie", "Sous-categorie", "Sous type"],
-        "Année": ["Année", "Annee", "Year"],
-        "Mois": ["Mois", "mois", "Month"],
         "Nom": ["Nom", "Client", "name"],
-        "_date_probe_": ["Date", "date", "Date d'envoi", "Created at"],
+        "Date": ["Date", "Date création", "Date d'envoi", "Created at", "Créé le"],
     }
 
     NUMS = [
@@ -54,22 +52,34 @@ def _norm_cols(df: pd.DataFrame) -> pd.DataFrame:
         "Acompte 1", "Acompte 2", "Acompte 3", "Acompte 4"
     ]
 
+    # Colonnes de texte
     df = _ensure_std_col(df, "Nom", CAND["Nom"])
     df = _ensure_std_col(df, "Visa", CAND["Visa"], transform=lambda s: s.str.title())
     df = _ensure_std_col(df, "Catégorie", CAND["Catégorie"], transform=lambda s: s.str.title())
     df = _ensure_std_col(df, "Sous-catégorie", CAND["Sous-catégorie"], transform=lambda s: s.str.title())
 
+    # Colonnes numériques
     for col in NUMS:
         if col not in df.columns:
             df[col] = 0
         df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
+    # Calculs financiers
     df["Montant facturé"] = df["Montant honoraires (US $)"] + df["Autres frais (US $)"]
     df["Total payé"] = df[["Acompte 1", "Acompte 2", "Acompte 3", "Acompte 4"]].sum(axis=1)
     df["Solde restant"] = df["Montant facturé"] - df["Total payé"]
 
-    for c in ["Catégorie", "Sous-catégorie", "Visa"]:
-        df[c] = df[c].astype(str).str.strip().str.title()
+    # Extraction automatique Année / Mois
+    date_col = _best_source(df, CAND["Date"])
+    if date_col:
+        parsed = pd.to_datetime(df[date_col], errors="coerce", dayfirst=True)
+        df["Année"] = parsed.dt.year
+        df["Mois"] = parsed.dt.month_name(locale="fr_FR").fillna("")
+    else:
+        if "Année" not in df.columns:
+            df["Année"] = ""
+        if "Mois" not in df.columns:
+            df["Mois"] = ""
 
     return df
 
@@ -101,7 +111,7 @@ def tab_dashboard():
 
     df = _norm_cols(df_raw)
 
-    # ======= Filtres =======
+    # ======= Filtres principaux =======
     st.markdown("### 🎯 Filtres")
     col1, col2, col3, col4, col5 = st.columns(5)
 
@@ -125,14 +135,8 @@ def tab_dashboard():
 
     st.markdown("---")
 
-    # ======= KPI (taille réduite) =======
+    # ======= KPI =======
     st.subheader("📈 Synthèse financière")
-    total_honoraire = df["Montant honoraires (US $)"].sum()
-    total_autres = df["Autres frais (US $)"].sum()
-    total_facture = df["Montant facturé"].sum()
-    total_paye = df["Total payé"].sum()
-    total_solde = df["Solde restant"].sum()
-    nb_dossiers = len(df)
 
     kpi_style = """
     <style>
@@ -141,6 +145,13 @@ def tab_dashboard():
     </style>
     """
     st.markdown(kpi_style, unsafe_allow_html=True)
+
+    total_honoraire = df["Montant honoraires (US $)"].sum()
+    total_autres = df["Autres frais (US $)"].sum()
+    total_facture = df["Montant facturé"].sum()
+    total_paye = df["Total payé"].sum()
+    total_solde = df["Solde restant"].sum()
+    nb_dossiers = len(df)
 
     c0, c1, c2, c3, c4, c5 = st.columns(6)
     c0.metric("📁 Dossiers", f"{nb_dossiers:,}")

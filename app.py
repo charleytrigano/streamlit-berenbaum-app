@@ -5,7 +5,7 @@ import os
 st.set_page_config(page_title="📊 Visa Dashboard", layout="wide")
 
 # === CONFIGURATION ===
-EXCEL_FILE = "Clients BL.xlsx"
+EXCEL_FILE = r"C:\Users\charl\OneDrive\Estelle\Clients BL.xlsx"
 SHEET_NAME = "Clients"
 
 # === FONCTIONS ===

@@ -58,4 +58,5 @@ def tab_fichiers():
             f.write(uploaded.getbuffer())
         st.success("✅ Nouveau fichier enregistré avec succès.")
         st.session_state["data_xlsx"] = read_excel_file(EXCEL_FILE)
-        st.experimental_rerun()
+        st.rerun()
+

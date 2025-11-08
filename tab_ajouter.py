@@ -171,13 +171,25 @@ def tab_ajouter():
 
             st.success(f"💰 Dossier #{dossier_n} ajouté à Escrow (montant {acompte1:.2f} US $).")
 
-        # --- Sauvegarde locale ---
-        try:
-            with pd.ExcelWriter("Clients BL.xlsx", engine="openpyxl", mode="w") as writer:
-                for sheet, df_sheet in st.session_state["data_xlsx"].items():
-                    df_sheet.to_excel(writer, index=False, sheet_name=sheet)
-            st.success(f"✅ Dossier #{dossier_n} enregistré et sauvegardé avec succès.")
-        except Exception:
-            st.warning("⚠️ Dossier ajouté en mémoire (sauvegarde locale impossible sur Streamlit Cloud).")
+        import dropbox
+import io
 
-        st.dataframe(new_row, use_container_width=True, height=180)
+# --- Sauvegarde sur Dropbox ---
+try:
+    token = st.secrets["DROPBOX_TOKEN"]
+    folder = st.secrets.get("DROPBOX_FOLDER", "/")
+    dbx = dropbox.Dropbox(token)
+
+    # Créer le fichier Excel en mémoire
+    with io.BytesIO() as buffer:
+        with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+            for sheet, df_sheet in st.session_state["data_xlsx"].items():
+                df_sheet.to_excel(writer, index=False, sheet_name=sheet)
+        buffer.seek(0)
+
+        dropbox_path = f"{folder}/Clients BL.xlsx"
+        dbx.files_upload(buffer.read(), dropbox_path, mode=dropbox.files.WriteMode("overwrite"))
+        st.success(f"☁️ Fichier Excel mis à jour sur Dropbox : {dropbox_path}")
+except Exception as e:
+    st.warning(f"⚠️ Sauvegarde sur Dropbox échouée : {e}")
+

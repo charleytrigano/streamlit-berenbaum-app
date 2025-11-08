@@ -21,17 +21,15 @@ def safe_date(x):
         return date.today()
 
 def tab_gestion():
-    """Onglet Gestion avec Escrow automatique et sauvegarde réelle"""
     st.header("✏️ / 🗑️ Gestion des dossiers")
 
-    # Vérification du chargement
     if "data_xlsx" not in st.session_state or not st.session_state["data_xlsx"]:
         st.warning("⚠️ Aucune donnée disponible. Chargez d'abord le fichier Excel via 📄 Fichiers.")
         return
 
     data = st.session_state["data_xlsx"]
     if "Clients" not in data:
-        st.error("❌ La feuille 'Clients' est absente.")
+        st.error("❌ Feuille 'Clients' absente.")
         return
 
     df_clients = data["Clients"].copy()
@@ -48,16 +46,22 @@ def tab_gestion():
 
     row = df_clients[df_clients["Dossier N"].astype(str) == selected].iloc[0].copy()
 
-    # Champs à modifier
+    # Lecture des champs existants
     nom = st.text_input("Nom du client", row.get("Nom", ""))
-    montant = st.number_input("Montant honoraires (US $)", min_value=0.0, value=to_float(row.get("Montant honoraires (US $)", 0)))
-    acompte1 = st.number_input("Acompte 1", min_value=0.0, value=to_float(row.get("Acompte 1", 0)))
-    date_acompte1 = st.date_input("Date Acompte 1", value=safe_date(row.get("Date Acompte 1", date.today())))
-    escrow = st.checkbox("Escrow ?", value=str(row.get("Escrow", "")).strip().lower() in ["oui", "true", "1", "x"])
+    montant = to_float(row.get("Montant honoraires (US $)", 0))
+    acompte1 = to_float(row.get("Acompte 1", 0))
+    date_acompte1 = safe_date(row.get("Date Acompte 1", date.today()))
+
+    # ⚙️ Coche automatique de la case Escrow
+    condition_escrow = acompte1 > 0 and montant == 0
+    escrow_auto = str(row.get("Escrow", "")).strip().lower() in ["oui", "true", "1", "x"]
+    escrow_value = escrow_auto or condition_escrow
+    escrow = st.checkbox("Escrow ?", value=escrow_value)
+
     commentaires = st.text_area("Commentaires", row.get("Commentaires", ""))
 
     st.markdown("---")
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
 
     with col1:
         if st.button("💾 Enregistrer les modifications", type="primary"):
@@ -69,11 +73,11 @@ def tab_gestion():
             df_clients.at[idx, "Escrow"] = "Oui" if escrow else "Non"
             df_clients.at[idx, "Commentaires"] = commentaires
 
-            # 🔹 Détection Escrow automatique
+            # Détection ajout escrow
             ajout_escrow = False
             deja_escrow = selected in df_escrow["Dossier N"].astype(str).values
 
-            if (escrow or (acompte1 > 0 and montant == 0)) and not deja_escrow:
+            if (escrow or condition_escrow) and not deja_escrow:
                 new_row = pd.DataFrame([{
                     "Dossier N": selected,
                     "Nom": nom,
@@ -84,12 +88,16 @@ def tab_gestion():
                 }])
                 df_escrow = pd.concat([df_escrow, new_row], ignore_index=True)
                 ajout_escrow = True
+                st.success(f"✅ Dossier {selected} ajouté à Escrow.")
+            elif deja_escrow:
+                st.info(f"ℹ️ Dossier {selected} déjà présent dans Escrow.")
+            else:
+                st.info("Aucun ajout Escrow requis (aucune condition remplie).")
 
-            # Mise à jour session
+            # Sauvegarde
             st.session_state["data_xlsx"]["Clients"] = df_clients
             st.session_state["data_xlsx"]["Escrow"] = df_escrow
 
-            # Sauvegarde locale directe (fichier mis à jour)
             buffer = io.BytesIO()
             with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
                 for sheet, df in st.session_state["data_xlsx"].items():
@@ -103,12 +111,7 @@ def tab_gestion():
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
 
-            if ajout_escrow:
-                st.success(f"✅ Dossier {selected} ajouté à Escrow.")
-            else:
-                st.info("💾 Modifications enregistrées.")
-
-            st.rerun()
+            st.experimental_rerun()
 
     with col2:
         if st.button("🗑️ Supprimer le dossier"):
@@ -116,7 +119,3 @@ def tab_gestion():
             st.session_state["data_xlsx"]["Clients"] = df_clients
             st.success(f"🗑️ Dossier {selected} supprimé.")
             st.experimental_rerun()
-
-    with col3:
-        st.info("💡 Les sauvegardes peuvent être faites localement ou via Dropbox.")
-

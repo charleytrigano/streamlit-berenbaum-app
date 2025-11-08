@@ -22,6 +22,14 @@ def safe_date(val):
     return date.today()
 
 
+def to_float(val):
+    """Convertit proprement en float pour éviter les 'nan', strings, etc."""
+    try:
+        return float(str(val).replace(",", ".").strip()) if val not in ["", None, "nan", "NaN"] else 0.0
+    except Exception:
+        return 0.0
+
+
 def tab_gestion():
     """Onglet Gestion — modification/suppression des dossiers clients, et Escrow automatique."""
 
@@ -46,7 +54,6 @@ def tab_gestion():
         st.info("Aucun dossier client enregistré.")
         return
 
-    # --- Sélection du dossier ---
     dossier_list = df_clients["Dossier N"].astype(str).tolist()
     selected_dossier = st.selectbox("Sélectionnez un dossier :", options=[""] + dossier_list, key="gestion_dossier_select")
     if not selected_dossier:
@@ -56,14 +63,15 @@ def tab_gestion():
 
     st.markdown("### 🔧 Modifier le dossier sélectionné")
 
+    # --- Conversion date et montants ---
     date_parsed = safe_date(dossier_data.get("Date Acompte 1", ""))
+    montant = to_float(dossier_data.get("Montant honoraires (US $)", 0))
+    acompte = to_float(dossier_data.get("Acompte 1", 0))
 
     # --- Formulaire ---
     nom = st.text_input("Nom du client", value=str(dossier_data.get("Nom", "")), key="gestion_nom")
-    montant = st.number_input("Montant honoraires (US $)", min_value=0.0,
-                              value=float(dossier_data.get("Montant honoraires (US $)", 0)), step=50.0, key="gestion_montant")
-    acompte = st.number_input("Acompte 1", min_value=0.0,
-                              value=float(dossier_data.get("Acompte 1", 0)), step=50.0, key="gestion_acompte")
+    montant = st.number_input("Montant honoraires (US $)", min_value=0.0, value=montant, step=50.0, key="gestion_montant")
+    acompte = st.number_input("Acompte 1", min_value=0.0, value=acompte, step=50.0, key="gestion_acompte")
     date_acompte = st.date_input("Date Acompte 1", value=date_parsed, key="gestion_date_acompte")
     escrow = st.checkbox("Escrow ?", value=bool(dossier_data.get("Escrow", False)), key="gestion_escrow")
     commentaire = st.text_area("Commentaires", value=dossier_data.get("Commentaires", ""), key="gestion_commentaire")
@@ -82,13 +90,13 @@ def tab_gestion():
             df_clients.at[idx, "Escrow"] = escrow
             df_clients.at[idx, "Commentaires"] = commentaire
 
-            # === Nouvelle logique Escrow ===
-            # Vérifie si le dossier est déjà dans Escrow
+            # === LOGIQUE ESCROW RENFORCÉE ===
             deja_escrow = selected_dossier in df_escrow["Dossier N"].astype(str).values
 
-            # Cas 1 : case cochée → ajout forcé
-            # Cas 2 : acompte > 0 et honoraires == 0 → ajout auto
-            if (escrow or (acompte > 0 and montant == 0)) and not deja_escrow:
+            montant_vide = (montant == 0 or pd.isna(montant))
+            acompte_valide = (acompte > 0)
+
+            if (escrow or (acompte_valide and montant_vide)) and not deja_escrow:
                 new_row = {
                     "Dossier N": selected_dossier,
                     "Nom": nom,
@@ -99,13 +107,15 @@ def tab_gestion():
                     "Commentaires": commentaire,
                 }
                 df_escrow = pd.concat([df_escrow, pd.DataFrame([new_row])], ignore_index=True)
-                st.success(f"✅ Dossier {selected_dossier} ajouté automatiquement dans Escrow.")
+                st.success(f"✅ Dossier {selected_dossier} ajouté automatiquement dans Escrow (Acompte sans honoraires).")
+
             elif deja_escrow:
                 st.info(f"ℹ️ Dossier {selected_dossier} déjà présent dans Escrow.")
+
             else:
                 st.info("Aucun ajout Escrow requis.")
 
-            # Mise à jour du session_state
+            # === Sauvegarde dans la session ===
             st.session_state["data_xlsx"]["Clients"] = df_clients
             st.session_state["data_xlsx"]["Escrow"] = df_escrow
 

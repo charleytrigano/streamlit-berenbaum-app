@@ -18,7 +18,7 @@ def tab_compta():
     df = data["Clients"].copy()
     df.columns = [c.strip() for c in df.columns]
 
-    # Conversion des montants en numériques
+    # Conversion des colonnes numériques
     montant_cols = [
         "Montant honoraires (US $)",
         "Autres frais (US $)",
@@ -31,18 +31,31 @@ def tab_compta():
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
-    # Calculs financiers
+    # Calculs principaux
     df["Montant facturé"] = df["Montant honoraires (US $)"] + df["Autres frais (US $)"]
     df["Total payé"] = df["Acompte 1"] + df["Acompte 2"] + df["Acompte 3"] + df["Acompte 4"]
     df["Solde restant"] = df["Montant facturé"] - df["Total payé"]
 
-    # ===== FILTRES =====
+    # ================== FILTRES ==================
     st.markdown("### 🎯 Filtres")
     c1, c2, c3 = st.columns(3)
-    visa = c1.selectbox("Visa", options=["(Tous)"] + sorted(df["Visa"].dropna().unique().tolist()) if "Visa" in df else ["(Tous)"])
-    annee = c2.selectbox("Année", options=["(Toutes)"] + sorted(df["Année"].dropna().unique().astype(str).tolist()) if "Année" in df else ["(Toutes)"])
-    mois = c3.selectbox("Mois", options=["(Tous)"] + sorted(df["Mois"].dropna().unique().astype(str).tolist()) if "Mois" in df else ["(Tous)"])
+    visa = c1.selectbox(
+        "Visa",
+        options=["(Tous)"] + sorted(df["Visa"].dropna().unique().tolist()) if "Visa" in df else ["(Tous)"],
+        key="compta_visa"
+    )
+    annee = c2.selectbox(
+        "Année",
+        options=["(Toutes)"] + sorted(df["Année"].dropna().unique().astype(str).tolist()) if "Année" in df else ["(Toutes)"],
+        key="compta_annee"
+    )
+    mois = c3.selectbox(
+        "Mois",
+        options=["(Tous)"] + sorted(df["Mois"].dropna().unique().astype(str).tolist()) if "Mois" in df else ["(Tous)"],
+        key="compta_mois"
+    )
 
+    # Application des filtres
     if visa != "(Tous)":
         df = df[df["Visa"] == visa]
     if annee != "(Toutes)":
@@ -52,60 +65,61 @@ def tab_compta():
 
     st.markdown("---")
 
-    # ===== SYNTHÈSE =====
+    # ================== SYNTHÈSE ==================
     st.subheader("📊 Synthèse financière")
     total_facture = df["Montant facturé"].sum()
     total_paye = df["Total payé"].sum()
     total_solde = df["Solde restant"].sum()
 
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Total facturé", f"{total_facture:,.0f} $")
-    col2.metric("Total payé", f"{total_paye:,.0f} $")
-    col3.metric("Solde restant", f"{total_solde:,.0f} $")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Facturé", f"{total_facture:,.0f} $")
+    c2.metric("Payé", f"{total_paye:,.0f} $")
+    c3.metric("Solde", f"{total_solde:,.0f} $")
 
     st.markdown("---")
 
-    # ===== TABLEAU CLIENTS =====
+    # ================== TABLEAU DÉTAILLÉ ==================
     st.subheader("📋 Détail par client")
-    affichage = df[
-        [
-            "Nom",
-            "Visa",
-            "Montant honoraires (US $)",
-            "Autres frais (US $)",
-            "Montant facturé",
-            "Total payé",
-            "Solde restant",
-        ]
+    colonnes_aff = [
+        "Nom",
+        "Visa",
+        "Montant honoraires (US $)",
+        "Autres frais (US $)",
+        "Montant facturé",
+        "Total payé",
+        "Solde restant",
     ]
+    affichage = df[colonnes_aff] if all(c in df.columns for c in colonnes_aff) else df
 
-    # ✅ On ne formate que les colonnes numériques pour éviter les erreurs
     numeric_cols = affichage.select_dtypes(include=["number"]).columns
     st.dataframe(
         affichage.style.format(subset=numeric_cols, formatter="{:,.2f}"),
         use_container_width=True,
-        height=500,
+        height=450,
     )
 
     st.markdown("---")
 
-    # ===== RÉCAP PAR VISA =====
+    # ================== SYNTHÈSE PAR VISA ==================
     st.subheader("🗂️ Synthèse par type de visa")
     if "Visa" in df.columns:
-        recap = (
+        recap_visa = (
             df.groupby("Visa")[["Montant facturé", "Total payé", "Solde restant"]]
             .sum()
             .sort_values("Montant facturé", ascending=False)
             .reset_index()
         )
-        numeric_cols = recap.select_dtypes(include=["number"]).columns
-        st.dataframe(recap.style.format(subset=numeric_cols, formatter="{:,.2f}"), use_container_width=True)
+        numeric_cols = recap_visa.select_dtypes(include=["number"]).columns
+        st.dataframe(
+            recap_visa.style.format(subset=numeric_cols, formatter="{:,.2f}"),
+            use_container_width=True,
+        )
     else:
         st.info("Aucune colonne 'Visa' trouvée pour regrouper les données.")
 
     st.markdown("---")
 
-    # ===== RÉCAP PAR ANNÉE =====
+    # ================== SYNTHÈSE PAR ANNÉE ==================
     st.subheader("📅 Synthèse par année")
     if "Année" in df.columns:
         recap_annee = (
@@ -115,6 +129,9 @@ def tab_compta():
             .reset_index()
         )
         numeric_cols = recap_annee.select_dtypes(include=["number"]).columns
-        st.dataframe(recap_annee.style.format(subset=numeric_cols, formatter="{:,.2f}"), use_container_width=True)
+        st.dataframe(
+            recap_annee.style.format(subset=numeric_cols, formatter="{:,.2f}"),
+            use_container_width=True,
+        )
     else:
         st.info("Aucune colonne 'Année' trouvée pour la synthèse temporelle.")

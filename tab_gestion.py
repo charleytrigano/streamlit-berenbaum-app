@@ -111,7 +111,7 @@ def tab_gestion():
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
 
-            st.experimental_rerun()
+            st.rerun()
 
     with col2:
         if st.button("🗑️ Supprimer le dossier"):
@@ -119,3 +119,4 @@ def tab_gestion():
             st.session_state["data_xlsx"]["Clients"] = df_clients
             st.success(f"🗑️ Dossier {selected} supprimé.")
             st.experimental_rerun()
+

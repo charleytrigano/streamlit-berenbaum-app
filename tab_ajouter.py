@@ -6,7 +6,6 @@ from datetime import date
 def tab_ajouter():
     st.header("🧾 Ajouter un dossier client")
 
-    # Vérifie la présence du fichier Excel
     if "data_xlsx" not in st.session_state or not st.session_state["data_xlsx"]:
         st.warning("⚠️ Aucun fichier Excel chargé. Passe d'abord par l'onglet 📄 Fichiers.")
         return
@@ -20,73 +19,46 @@ def tab_ajouter():
     df_clients = data["Clients"].copy()
     df_visa = data["Visa"].copy()
 
-    # 🔍 Normaliser les noms de colonnes pour éviter les erreurs (accents, majuscules, etc.)
+    # 🔍 Normalisation des colonnes
     df_visa.columns = [c.strip().replace("é", "e").replace("è", "e").replace("É", "E").replace("ê", "e") for c in df_visa.columns]
 
-    # Détection des colonnes principales
     col_categorie = next((c for c in df_visa.columns if "categorie" in c.lower()), None)
     col_souscat = next((c for c in df_visa.columns if "sous" in c.lower()), None)
 
-    # Catégories et sous-catégories
+    # Catégories
     categories = sorted(df_visa[col_categorie].dropna().unique().tolist()) if col_categorie else []
-    sous_categories = sorted(df_visa[col_souscat].dropna().unique().tolist()) if col_souscat else []
 
-    # ✅ Détection automatique des visas : on cherche les colonnes où il y a des "1"
-    visa_columns = [col for col in df_visa.columns if col not in [col_categorie, col_souscat]]
-    visas = []
-    for col in visa_columns:
-        if df_visa[col].fillna(0).astype(str).str.strip().eq("1").any():
-            visas.append(col)
-    visas = sorted(visas)
-
-    # Colonnes manquantes dans Clients
-    required_cols = [
-        "Dossier N", "Nom", "Date", "Categories", "Sous-categories", "Visa",
-        "Montant honoraires (US $)", "Acompte 1", "Date Acompte 1",
-        "Mode de paiement", "Escrow", "Commentaires",
-        "Autres frais (US $)", "Montant facturé", "Total payé", "Solde restant"
-    ]
-    for col in required_cols:
-        if col not in df_clients.columns:
-            df_clients[col] = np.nan
-
-    # Numérotation automatique
-    try:
-        last_num = (
-            df_clients["Dossier N"]
-            .dropna()
-            .astype(str)
-            .str.extract(r"(\d+)")
-            .dropna()
-            .astype(int)
-            .max()
-            .values[0]
-        )
-        dossier_n = str(last_num + 1)
-    except Exception:
-        dossier_n = "1"
-
-    # ===================== LIGNE 1 =====================
+    # Sélection Catégorie → Sous-catégorie dépendante
     st.subheader("📋 Informations principales")
     c1, c2, c3 = st.columns([1, 2, 1])
     with c1:
+        # Numérotation automatique
+        try:
+            last_num = (
+                df_clients["Dossier N"].dropna().astype(str).str.extract(r"(\d+)").dropna().astype(int).max().values[0]
+            )
+            dossier_n = str(last_num + 1)
+        except Exception:
+            dossier_n = "1"
         st.text_input("Dossier N°", value=dossier_n, disabled=True)
     with c2:
         nom = st.text_input("Nom du client *")
     with c3:
         date_creation = st.date_input("Date (création du dossier)", value=date.today())
 
-    # ===================== LIGNE 2 =====================
     st.markdown("### 🗂️ Classification du dossier")
-    c4, c5, c6 = st.columns(3)
+    c4, c5 = st.columns(2)
     with c4:
         categorie = st.selectbox("Catégorie", options=[""] + categories)
     with c5:
+        if categorie:
+            sous_df = df_visa[df_visa[col_categorie] == categorie]
+            sous_categories = sorted(sous_df[col_souscat].dropna().unique().tolist()) if col_souscat else []
+        else:
+            sous_categories = []
         sous_categorie = st.selectbox("Sous-catégorie", options=[""] + sous_categories)
-    with c6:
-        visa = st.selectbox("Visa", options=[""] + visas)
 
-    # ===================== LIGNE 3 =====================
+    # ============================================
     st.markdown("### 💰 Détails financiers")
     c7, c8, c9 = st.columns(3)
     with c7:
@@ -96,7 +68,6 @@ def tab_ajouter():
     with c9:
         acompte1 = st.number_input("Acompte 1", min_value=0.0, step=50.0)
 
-    # ===================== LIGNE 4 =====================
     st.markdown("### 🏦 Mode de paiement")
     mode_col, cb1, cb2, cb3, cb4 = st.columns([2, 1, 1, 1, 1])
     with mode_col:
@@ -119,17 +90,14 @@ def tab_ajouter():
         }.items() if v]
     )
 
-    # ===================== LIGNE 5 =====================
     st.markdown("### 🛡️ Escrow")
     escrow_checked = st.checkbox("Activer Escrow pour ce dossier")
     escrow_value = "Oui" if escrow_checked else "Non"
 
-    # ===================== LIGNE 6 =====================
     st.markdown("### 🗒️ Commentaires")
     commentaires = st.text_area("Commentaires", height=100)
 
     # ===================== SAUVEGARDE =====================
-    st.markdown("---")
     if st.button("💾 Enregistrer le dossier"):
         if not nom.strip():
             st.error("❌ Le nom du client est obligatoire.")
@@ -145,7 +113,6 @@ def tab_ajouter():
             "Date": date_creation.isoformat(),
             "Categories": categorie,
             "Sous-categories": sous_categorie,
-            "Visa": visa,
             "Montant honoraires (US $)": montant_h,
             "Acompte 1": acompte1,
             "Date Acompte 1": date_acompte1.isoformat() if date_acompte1 else "",

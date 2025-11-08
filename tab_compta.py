@@ -2,91 +2,119 @@ import streamlit as st
 import pandas as pd
 
 def tab_compta():
-    """Onglet Comptabilité Client."""
-    st.header("💳 Comptabilité client")
+    """Onglet : Comptabilité Client"""
+    st.header("💳 Comptabilité Client")
 
+    # Vérifie si les données Excel sont chargées
     if "data_xlsx" not in st.session_state or not st.session_state["data_xlsx"]:
-        st.warning("⚠️ Aucune donnée chargée. Veuillez importer votre fichier Excel via l’onglet 📄 Fichiers.")
+        st.warning("⚠️ Aucune donnée disponible. Importez un fichier via l’onglet Paramètres.")
         return
 
     data = st.session_state["data_xlsx"]
-
     if "Clients" not in data:
-        st.error("❌ La feuille 'Clients' est absente du fichier Excel.")
+        st.error("La feuille 'Clients' est introuvable dans le fichier Excel.")
         return
 
     df = data["Clients"].copy()
-    if df.empty:
-        st.info("Aucun dossier client enregistré.")
-        return
-
-    # Nettoyage des colonnes
     df.columns = [c.strip() for c in df.columns]
 
-    # Colonnes nécessaires
-    needed = [
-        "Nom", "Type visa", "Année", "Mois",
-        "Montant honoraires (US $)", "Autres frais (US $)",
-        "Montant facturé", "Total payé", "Solde restant"
+    # Conversion des montants en numériques
+    montant_cols = [
+        "Montant honoraires (US $)",
+        "Autres frais (US $)",
+        "Acompte 1",
+        "Acompte 2",
+        "Acompte 3",
+        "Acompte 4",
     ]
-    for col in needed:
-        if col not in df.columns:
-            df[col] = 0
+    for col in montant_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
-    # Filtres
-    st.markdown("### 🔍 Filtres de recherche")
-    col1, col2 = st.columns(2)
-    annee_list = sorted(df["Année"].dropna().unique())
-    type_visa_list = sorted(df["Type visa"].dropna().unique())
+    # Calculs financiers
+    df["Montant facturé"] = df["Montant honoraires (US $)"] + df["Autres frais (US $)"]
+    df["Total payé"] = df["Acompte 1"] + df["Acompte 2"] + df["Acompte 3"] + df["Acompte 4"]
+    df["Solde restant"] = df["Montant facturé"] - df["Total payé"]
 
-    selected_annee = col1.selectbox("Année", options=["Toutes"] + list(map(str, annee_list)))
-    selected_visa = col2.selectbox("Type de visa", options=["Tous"] + type_visa_list)
+    # ===== FILTRES =====
+    st.markdown("### 🎯 Filtres")
+    c1, c2, c3 = st.columns(3)
+    visa = c1.selectbox("Visa", options=["(Tous)"] + sorted(df["Visa"].dropna().unique().tolist()) if "Visa" in df else ["(Tous)"])
+    annee = c2.selectbox("Année", options=["(Toutes)"] + sorted(df["Année"].dropna().unique().astype(str).tolist()) if "Année" in df else ["(Toutes)"])
+    mois = c3.selectbox("Mois", options=["(Tous)"] + sorted(df["Mois"].dropna().unique().astype(str).tolist()) if "Mois" in df else ["(Tous)"])
 
-    df_filtre = df.copy()
-    if selected_annee != "Toutes":
-        df_filtre = df_filtre[df_filtre["Année"].astype(str) == selected_annee]
-    if selected_visa != "Tous":
-        df_filtre = df_filtre[df_filtre["Type visa"] == selected_visa]
+    if visa != "(Tous)":
+        df = df[df["Visa"] == visa]
+    if annee != "(Toutes)":
+        df = df[df["Année"].astype(str) == annee]
+    if mois != "(Tous)":
+        df = df[df["Mois"].astype(str) == mois]
 
-    # Calculs
-    df_filtre["Montant facturé"] = df_filtre["Montant honoraires (US $)"] + df_filtre["Autres frais (US $)"]
-    total_facture = df_filtre["Montant facturé"].sum()
-    total_paye = df_filtre["Total payé"].sum()
-    total_solde = df_filtre["Solde restant"].sum()
+    st.markdown("---")
 
-    st.markdown("### 📊 Synthèse comptable")
+    # ===== SYNTHÈSE =====
+    st.subheader("📊 Synthèse financière")
+    total_facture = df["Montant facturé"].sum()
+    total_paye = df["Total payé"].sum()
+    total_solde = df["Solde restant"].sum()
+
     col1, col2, col3 = st.columns(3)
-    col1.metric("💵 Total facturé", f"{total_facture:,.2f} $")
-    col2.metric("💰 Total payé", f"{total_paye:,.2f} $")
-    col3.metric("💸 Solde restant", f"{total_solde:,.2f} $")
+    col1.metric("Total facturé", f"{total_facture:,.0f} $")
+    col2.metric("Total payé", f"{total_paye:,.0f} $")
+    col3.metric("Solde restant", f"{total_solde:,.0f} $")
 
     st.markdown("---")
 
-    # Tableau détaillé
-    st.subheader("📋 Détails des clients")
-    affichage = df_filtre[[
-        "Nom", "Type visa", "Année", "Mois",
-        "Montant honoraires (US $)", "Autres frais (US $)",
-        "Montant facturé", "Total payé", "Solde restant"
-    ]].sort_values(by="Nom")
+    # ===== TABLEAU CLIENTS =====
+    st.subheader("📋 Détail par client")
+    affichage = df[
+        [
+            "Nom",
+            "Visa",
+            "Montant honoraires (US $)",
+            "Autres frais (US $)",
+            "Montant facturé",
+            "Total payé",
+            "Solde restant",
+        ]
+    ]
 
-    st.dataframe(affichage.style.format("{:,.2f}"), use_container_width=True)
+    # ✅ On ne formate que les colonnes numériques pour éviter les erreurs
+    numeric_cols = affichage.select_dtypes(include=["number"]).columns
+    st.dataframe(
+        affichage.style.format(subset=numeric_cols, formatter="{:,.2f}"),
+        use_container_width=True,
+        height=500,
+    )
 
-    # Export Excel
     st.markdown("---")
-    st.subheader("💾 Exporter la comptabilité")
-    export = st.button("📤 Télécharger le fichier Excel")
 
-    if export:
-        try:
-            output_file = "Export_Compta.xlsx"
-            affichage.to_excel(output_file, index=False)
-            with open(output_file, "rb") as f:
-                st.download_button(
-                    label="📥 Télécharger le fichier comptable",
-                    data=f,
-                    file_name=output_file,
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                )
-        except Exception as e:
-            st.error(f"Erreur lors de l’export : {e}")
+    # ===== RÉCAP PAR VISA =====
+    st.subheader("🗂️ Synthèse par type de visa")
+    if "Visa" in df.columns:
+        recap = (
+            df.groupby("Visa")[["Montant facturé", "Total payé", "Solde restant"]]
+            .sum()
+            .sort_values("Montant facturé", ascending=False)
+            .reset_index()
+        )
+        numeric_cols = recap.select_dtypes(include=["number"]).columns
+        st.dataframe(recap.style.format(subset=numeric_cols, formatter="{:,.2f}"), use_container_width=True)
+    else:
+        st.info("Aucune colonne 'Visa' trouvée pour regrouper les données.")
+
+    st.markdown("---")
+
+    # ===== RÉCAP PAR ANNÉE =====
+    st.subheader("📅 Synthèse par année")
+    if "Année" in df.columns:
+        recap_annee = (
+            df.groupby("Année")[["Montant facturé", "Total payé", "Solde restant"]]
+            .sum()
+            .sort_index(ascending=True)
+            .reset_index()
+        )
+        numeric_cols = recap_annee.select_dtypes(include=["number"]).columns
+        st.dataframe(recap_annee.style.format(subset=numeric_cols, formatter="{:,.2f}"), use_container_width=True)
+    else:
+        st.info("Aucune colonne 'Année' trouvée pour la synthèse temporelle.")

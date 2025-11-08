@@ -23,11 +23,11 @@ def tab_dashboard():
         st.warning("📄 La feuille 'Clients' est vide.")
         return
 
-    # Normaliser les colonnes
+    # Nettoyage des noms de colonnes
     df.columns = [c.strip() for c in df.columns]
 
-    # Vérifier les colonnes nécessaires
-    required_cols = [
+    # Conversion en numérique des colonnes utiles
+    numeric_cols = [
         "Montant honoraires (US $)",
         "Autres frais (US $)",
         "Acompte 1",
@@ -35,53 +35,108 @@ def tab_dashboard():
         "Acompte 3",
         "Acompte 4",
     ]
-    for col in required_cols:
-        if col not in df.columns:
-            df[col] = 0
+    for col in numeric_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
-    # Calculs
+    # Calculs principaux
     df["Montant facturé"] = df["Montant honoraires (US $)"] + df["Autres frais (US $)"]
-    df["Total payé"] = df[["Acompte 1", "Acompte 2", "Acompte 3", "Acompte 4"]].sum(axis=1)
+    df["Total payé"] = df["Acompte 1"] + df["Acompte 2"] + df["Acompte 3"] + df["Acompte 4"]
     df["Solde restant"] = df["Montant facturé"] - df["Total payé"]
 
-    total_facture = df["Montant facturé"].sum()
-    total_paye = df["Total payé"].sum()
-    solde = df["Solde restant"].sum()
+    # ================= FILTRES =================
+    st.markdown("### 🎯 Filtres")
+    col1, col2, col3, col4, col5 = st.columns(5)
 
-    # ===================== KPI =====================
-    st.markdown("### Synthèse financière")
+    categorie = col1.selectbox(
+        "Catégorie",
+        ["(Toutes)"] + sorted(df["Catégorie"].dropna().unique().tolist()) if "Catégorie" in df else ["(Toutes)"],
+        key="dash_cat"
+    )
+    souscat = col2.selectbox(
+        "Sous-catégorie",
+        ["(Toutes)"] + sorted(df["Sous-catégorie"].dropna().unique().tolist()) if "Sous-catégorie" in df else ["(Toutes)"],
+        key="dash_souscat"
+    )
+    visa = col3.selectbox(
+        "Visa",
+        ["(Tous)"] + sorted(df["Visa"].dropna().unique().tolist()) if "Visa" in df else ["(Tous)"],
+        key="dash_visa"
+    )
+    annee = col4.selectbox(
+        "Année",
+        ["(Toutes)"] + sorted(df["Année"].dropna().unique().astype(str).tolist()) if "Année" in df else ["(Toutes)"],
+        key="dash_annee"
+    )
+    mois = col5.selectbox(
+        "Mois",
+        ["(Tous)"] + sorted(df["Mois"].dropna().unique().astype(str).tolist()) if "Mois" in df else ["(Tous)"],
+        key="dash_mois"
+    )
 
-    kpi1, kpi2, kpi3 = st.columns(3)
-    kpi1.metric("💰 Montant facturé", f"{total_facture:,.2f} $")
-    kpi2.metric("✅ Total payé", f"{total_paye:,.2f} $")
-    kpi3.metric("💼 Solde restant", f"{solde:,.2f} $")
+    # Application des filtres
+    if categorie != "(Toutes)":
+        df = df[df["Catégorie"] == categorie]
+    if souscat != "(Toutes)":
+        df = df[df["Sous-catégorie"] == souscat]
+    if visa != "(Tous)":
+        df = df[df["Visa"] == visa]
+    if annee != "(Toutes)":
+        df = df[df["Année"].astype(str) == annee]
+    if mois != "(Tous)":
+        df = df[df["Mois"].astype(str) == mois]
 
     st.markdown("---")
 
-    # ===================== Filtres =====================
-    st.markdown("### 🔍 Filtres")
+    # ================= SYNTHÈSE FINANCIÈRE =================
+    st.subheader("📊 Synthèse financière")
 
-    col1, col2 = st.columns(2)
-    filtre_annee = col1.selectbox("Année", sorted(df["Année"].dropna().unique()) if "Année" in df else [], index=None, placeholder="Toutes")
-    filtre_visa = col2.selectbox("Type de Visa", sorted(df["Type visa"].dropna().unique()) if "Type visa" in df else [], index=None, placeholder="Tous")
+    total_honoraire = df["Montant honoraires (US $)"].sum()
+    total_autres = df["Autres frais (US $)"].sum()
+    total_facture = df["Montant facturé"].sum()
+    total_paye = df["Total payé"].sum()
+    total_solde = df["Solde restant"].sum()
 
-    # Appliquer les filtres
-    df_filtre = df.copy()
-    if filtre_annee:
-        df_filtre = df_filtre[df_filtre["Année"] == filtre_annee]
-    if filtre_visa:
-        df_filtre = df_filtre[df_filtre["Type visa"] == filtre_visa]
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("Honoraires", f"{total_honoraire:,.0f} $")
+    c2.metric("Autres frais", f"{total_autres:,.0f} $")
+    c3.metric("Facturé", f"{total_facture:,.0f} $")
+    c4.metric("Payé", f"{total_paye:,.0f} $")
+    c5.metric("Solde", f"{total_solde:,.0f} $")
 
-    # ===================== Tableau principal =====================
-    st.markdown("### 📋 Dossiers Clients")
+    st.markdown("---")
 
-    colonnes_affichees = [
+    # ================= TABLEAU DES CLIENTS =================
+    st.subheader("📋 Dossiers clients")
+    colonnes_aff = [
         "Nom",
-        "Type visa" if "Type visa" in df.columns else None,
+        "Visa",
+        "Montant honoraires (US $)",
+        "Autres frais (US $)",
         "Montant facturé",
         "Total payé",
         "Solde restant",
     ]
-    colonnes_affichees = [c for c in colonnes_affichees if c in df_filtre.columns]
+    if all(c in df.columns for c in colonnes_aff):
+        numeric_cols = df[colonnes_aff].select_dtypes(include=["number"]).columns
+        st.dataframe(
+            df[colonnes_aff].style.format(subset=numeric_cols, formatter="{:,.2f}"),
+            use_container_width=True,
+            height=400,
+        )
+    else:
+        st.info("Certaines colonnes sont manquantes dans le fichier.")
 
-    st.dataframe(df_filtre[colonnes_affichees], use_container_width=True, height=500)
+    st.markdown("---")
+
+    # ================= TOP 10 CLIENTS =================
+    st.subheader("🏆 Top 10 des dossiers (par montant facturé)")
+    top10 = df.nlargest(10, "Montant facturé")[["Nom", "Visa", "Montant facturé", "Total payé", "Solde restant"]]
+    numeric_cols = top10.select_dtypes(include=["number"]).columns
+    st.dataframe(
+        top10.style.format(subset=numeric_cols, formatter="{:,.2f}"),
+        use_container_width=True,
+        height=400,
+    )
+
+    st.markdown("— Fin du tableau de bord —")

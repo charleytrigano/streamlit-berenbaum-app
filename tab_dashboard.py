@@ -133,7 +133,7 @@ def tab_dashboard():
 
     st.markdown("---")
 
-    # ====== COMPARATIF ======
+    # ====== COMPARATIF ENTRE 2 PÉRIODES ======
     st.markdown("### 🔄 Comparatif entre deux périodes")
     colA, colB, colC, colD = st.columns(4)
     a1 = colA.selectbox("Année 1", ["(Toutes)"] + annees, key="a1")
@@ -147,6 +147,21 @@ def tab_dashboard():
         v1, v2 = d1["Montant facturé"].sum(), d2["Montant facturé"].sum()
         delta, pct = v2 - v1, (v2 / v1 - 1) * 100 if v1 else 0
 
+        st.markdown(f"#### 📅 Période 1 : {m1} {a1}")
+        if not d1.empty:
+            st.dataframe(d1[["Nom", "Visa", "Catégorie", "Sous-catégorie", "Montant facturé", "Total payé", "Solde restant"]],
+                         use_container_width=True, height=250)
+        else:
+            st.info("Aucun dossier trouvé pour cette période.")
+
+        st.markdown(f"#### 📅 Période 2 : {m2} {a2}")
+        if not d2.empty:
+            st.dataframe(d2[["Nom", "Visa", "Catégorie", "Sous-catégorie", "Montant facturé", "Total payé", "Solde restant"]],
+                         use_container_width=True, height=250)
+        else:
+            st.info("Aucun dossier trouvé pour cette période.")
+
+        st.markdown("#### 📊 Synthèse comparative")
         st.dataframe(pd.DataFrame({
             "Période": [f"{m1} {a1}", f"{m2} {a2}", "Évolution"],
             "Montant facturé ($)": [v1, v2, delta],
@@ -157,7 +172,7 @@ def tab_dashboard():
 
     st.markdown("---")
 
-    # ====== TABLEAU ======
+    # ====== TABLEAU COMPLET ======
     st.subheader("📋 Dossiers clients")
     cols = [
         "Nom", "Visa", "Catégorie", "Sous-catégorie", "Année", "Mois",

@@ -61,7 +61,7 @@ def _normalize(df):
     if date_src:
         parsed = _to_datetime_safe(df[date_src])
         df["Année"] = parsed.dt.year.fillna(0).astype(int)
-        df["Mois"] = parsed.dt.month_name(locale="fr_FR").fillna("")
+        mois_en = parsed.dt.month_name().fillna("") df["Mois"] = mois_en.map({     "January": "Janvier", "February": "Février", "March": "Mars", "April": "Avril",     "May": "Mai", "June": "Juin", "July": "Juillet", "August": "Août",     "September": "Septembre", "October": "Octobre", "November": "Novembre", "December": "Décembre" }).fillna(mois_en)
     else:
         # fallback : colonnes vides mais présentes
         df["Année"] = 0
@@ -171,3 +171,4 @@ def tab_dashboard():
     st.subheader("🏆 Top 10 des dossiers (par montant facturé)")
     top10 = dff.nlargest(10, "Montant facturé")[["Nom", "Visa", "Montant facturé", "Total payé", "Solde restant"]]
     st.dataframe(top10, use_container_width=True, height=300)
+

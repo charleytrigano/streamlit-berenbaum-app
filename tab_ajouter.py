@@ -20,7 +20,26 @@ def tab_ajouter():
     df_clients = data["Clients"].copy()
     df_visa = data["Visa"].copy()
 
-    # Colonnes obligatoires
+    # 🔍 Normaliser les noms de colonnes pour éviter les erreurs (accents, majuscules, etc.)
+    df_visa.columns = [c.strip().replace("é", "e").replace("è", "e").replace("É", "E").replace("ê", "e") for c in df_visa.columns]
+
+    # Détection des colonnes principales
+    col_categorie = next((c for c in df_visa.columns if "categorie" in c.lower()), None)
+    col_souscat = next((c for c in df_visa.columns if "sous" in c.lower()), None)
+
+    # Catégories et sous-catégories
+    categories = sorted(df_visa[col_categorie].dropna().unique().tolist()) if col_categorie else []
+    sous_categories = sorted(df_visa[col_souscat].dropna().unique().tolist()) if col_souscat else []
+
+    # ✅ Détection automatique des visas : on cherche les colonnes où il y a des "1"
+    visa_columns = [col for col in df_visa.columns if col not in [col_categorie, col_souscat]]
+    visas = []
+    for col in visa_columns:
+        if df_visa[col].fillna(0).astype(str).str.strip().eq("1").any():
+            visas.append(col)
+    visas = sorted(visas)
+
+    # Colonnes manquantes dans Clients
     required_cols = [
         "Dossier N", "Nom", "Date", "Categories", "Sous-categories", "Visa",
         "Montant honoraires (US $)", "Acompte 1", "Date Acompte 1",
@@ -31,7 +50,7 @@ def tab_ajouter():
         if col not in df_clients.columns:
             df_clients[col] = np.nan
 
-    # Numérotation automatique du dossier
+    # Numérotation automatique
     try:
         last_num = (
             df_clients["Dossier N"]
@@ -59,12 +78,6 @@ def tab_ajouter():
 
     # ===================== LIGNE 2 =====================
     st.markdown("### 🗂️ Classification du dossier")
-
-    # Chargement des listes déroulantes depuis l’onglet Visa
-    categories = sorted(df_visa["Categories"].dropna().unique().tolist()) if "Categories" in df_visa else []
-    sous_categories = sorted(df_visa["Sous-categories"].dropna().unique().tolist()) if "Sous-categories" in df_visa else []
-    visas = sorted(df_visa["Visa"].dropna().unique().tolist()) if "Visa" in df_visa else []
-
     c4, c5, c6 = st.columns(3)
     with c4:
         categorie = st.selectbox("Catégorie", options=[""] + categories)

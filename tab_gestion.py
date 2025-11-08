@@ -38,13 +38,19 @@ def tab_gestion():
 
     st.markdown("### 🔧 Modifier le dossier sélectionné")
 
+    # Récupération et nettoyage de la date
+    raw_date = dossier_data.get("Date Acompte 1", "")
+    try:
+        date_parsed = pd.to_datetime(raw_date).date() if pd.notna(raw_date) else date.today()
+    except Exception:
+        date_parsed = date.today()
+
     # Formulaire de modification
     nom = st.text_input("Nom du client", value=dossier_data.get("Nom", ""), key="gestion_nom")
     montant = st.number_input("Montant honoraires (US $)", min_value=0.0, value=float(dossier_data.get("Montant honoraires (US $)", 0)), step=50.0, key="gestion_montant")
     acompte = st.number_input("Acompte 1", min_value=0.0, value=float(dossier_data.get("Acompte 1", 0)), step=50.0, key="gestion_acompte")
-    date_acompte = st.date_input("Date Acompte 1", value=pd.to_datetime(dossier_data.get("Date Acompte 1", date.today())), key="gestion_date_acompte")
-    escrow = st.checkbox("Escrow ?", value=dossier_data.get("Escrow", False), key="gestion_escrow")
-
+    date_acompte = st.date_input("Date Acompte 1", value=date_parsed, key="gestion_date_acompte")
+    escrow = st.checkbox("Escrow ?", value=bool(dossier_data.get("Escrow", False)), key="gestion_escrow")
     commentaire = st.text_area("Commentaires", value=dossier_data.get("Commentaires", ""), key="gestion_commentaire")
 
     st.markdown("---")
@@ -119,4 +125,3 @@ def tab_gestion():
 
     with col3:
         st.info("💡 Les sauvegardes peuvent être faites localement ou sur Dropbox.")
-

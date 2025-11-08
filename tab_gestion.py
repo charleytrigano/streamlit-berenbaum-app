@@ -4,12 +4,30 @@ import io
 import dropbox
 from datetime import date, datetime
 
+def safe_date(val):
+    """Convertit proprement n’importe quelle valeur en date."""
+    if pd.isna(val) or val is None:
+        return date.today()
+    try:
+        if isinstance(val, date):
+            return val
+        if isinstance(val, datetime):
+            return val.date()
+        if isinstance(val, str) and val.strip():
+            parsed = pd.to_datetime(val, errors="coerce")
+            if pd.notna(parsed):
+                return parsed.date()
+    except Exception:
+        pass
+    return date.today()
+
+
 def tab_gestion():
-    """Onglet Gestion — modification ou suppression des dossiers clients, et gestion automatique des Escrow."""
+    """Onglet Gestion — modification/suppression des dossiers clients, et Escrow automatique."""
 
     st.header("✏️ / 🗑️ Gestion des dossiers")
 
-    # Vérification du chargement des données
+    # Vérification du chargement
     if "data_xlsx" not in st.session_state or not st.session_state["data_xlsx"]:
         st.warning("⚠️ Aucune donnée disponible. Chargez d'abord le fichier Excel via l'onglet 📄 Fichiers.")
         return
@@ -40,19 +58,8 @@ def tab_gestion():
 
     st.markdown("### 🔧 Modifier le dossier sélectionné")
 
-    # --- Nettoyage de la date Acompte 1 ---
-    raw_date = dossier_data.get("Date Acompte 1", "")
-    if isinstance(raw_date, pd.Timestamp):
-        date_parsed = raw_date.date()
-    else:
-        try:
-            if isinstance(raw_date, str) and raw_date.strip():
-                date_parsed = pd.to_datetime(raw_date, errors="coerce")
-                date_parsed = date_parsed.date() if pd.notna(date_parsed) else date.today()
-            else:
-                date_parsed = date.today()
-        except Exception:
-            date_parsed = date.today()
+    # --- Conversion date ---
+    date_parsed = safe_date(dossier_data.get("Date Acompte 1", ""))
 
     # --- Formulaire ---
     nom = st.text_input("Nom du client", value=str(dossier_data.get("Nom", "")), key="gestion_nom")

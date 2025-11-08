@@ -5,9 +5,9 @@ def tab_dashboard():
     """Tableau de bord principal - synthèse financière + Escrow."""
     st.header("📊 Tableau de bord")
 
-    # Vérification du chargement des données
+    # Vérif fichier
     if "data_xlsx" not in st.session_state or not st.session_state["data_xlsx"]:
-        st.warning("⚠️ Aucune donnée disponible. Chargez d'abord le fichier Excel via l'onglet 📄 Fichiers.")
+        st.warning("⚠️ Aucune donnée disponible. Chargez le fichier Excel via 📄 Fichiers.")
         return
 
     data = st.session_state["data_xlsx"]
@@ -21,7 +21,7 @@ def tab_dashboard():
         st.warning("📄 La feuille 'Clients' est vide.")
         return
 
-    # --- Normalisation des données ---
+    # Conversion propre des nombres
     def _to_float(x):
         try:
             s = str(x).replace(",", ".").replace("\u00A0", "").strip()
@@ -35,10 +35,11 @@ def tab_dashboard():
         else:
             df[col] = 0.0
 
-    # --- Filtres ---
+    # ==============================
+    # 🔍 Filtres
+    # ==============================
     st.subheader("🎛️ Filtres")
-    c1, c2, c3, c4, c5 = st.columns(5)
-
+    c1, c2, c3 = st.columns(3)
     cat = c1.selectbox("Catégorie", ["(Toutes)"] + sorted(df["Categories"].dropna().unique().tolist()) if "Categories" in df else ["(Toutes)"])
     souscat = c2.selectbox("Sous-catégorie", ["(Toutes)"] + sorted(df["Sous-categories"].dropna().unique().tolist()) if "Sous-categories" in df else ["(Toutes)"])
     visa = c3.selectbox("Visa", ["(Tous)"] + sorted(df["Visa"].dropna().unique().tolist()) if "Visa" in df else ["(Tous)"])
@@ -50,7 +51,9 @@ def tab_dashboard():
     if visa != "(Tous)":
         df = df[df["Visa"] == visa]
 
-    # --- Calculs principaux ---
+    # ==============================
+    # 💰 Calculs Clients
+    # ==============================
     df["Montant facturé"] = df["Montant honoraires (US $)"] + df["Autres frais (US $)"]
     df["Total payé"] = df["Acompte 1"] + df["Acompte 2"] + df["Acompte 3"] + df["Acompte 4"]
     df["Solde restant"] = df["Montant facturé"] - df["Total payé"]
@@ -60,19 +63,31 @@ def tab_dashboard():
     solde_restant = df["Solde restant"].sum()
     n_dossiers = len(df)
 
-    # --- Escrow ---
+    # ==============================
+    # 🛡️ Lecture Escrow
+    # ==============================
     escrow_count = 0
     escrow_total = 0.0
-    if "Escrow" in data and not data["Escrow"].empty:
-        escrow_df = data["Escrow"]
-        escrow_count = len(escrow_df)
-        if "Montant" in escrow_df.columns:
-            escrow_total = escrow_df["Montant"].map(_to_float).sum()
+    escrow_key = None
 
-    # --- KPI ---
+    # Recherche de la feuille "Escrow" (insensible à la casse)
+    for key in data.keys():
+        if key.strip().lower() == "escrow":
+            escrow_key = key
+            break
+
+    if escrow_key:
+        escrow_df = data[escrow_key].copy()
+        if not escrow_df.empty:
+            escrow_count = len(escrow_df)
+            if "Montant" in escrow_df.columns:
+                escrow_total = escrow_df["Montant"].map(_to_float).sum()
+
+    # ==============================
+    # 📊 KPI
+    # ==============================
     st.markdown("### 💼 Synthèse financière")
     k1, k2, k3, k4, k5, k6 = st.columns(6)
-
     k1.metric("Montant facturé", f"${montant_facture:,.0f}")
     k2.metric("Total payé", f"${montant_paye:,.0f}")
     k3.metric("Solde restant", f"${solde_restant:,.0f}")
@@ -82,7 +97,9 @@ def tab_dashboard():
 
     st.markdown("---")
 
-    # --- Tableau des dossiers ---
+    # ==============================
+    # 📋 Tableau Clients
+    # ==============================
     st.subheader("📁 Dossiers clients (aperçu)")
     colonnes = [
         "Dossier N", "Nom", "Categories", "Sous-categories", "Visa",
@@ -92,7 +109,9 @@ def tab_dashboard():
     colonnes = [c for c in colonnes if c in df.columns]
     st.dataframe(df[colonnes], use_container_width=True)
 
-    # --- Top 10 ---
+    # ==============================
+    # 🏆 Top 10 Dossiers
+    # ==============================
     st.markdown("### 🏆 Top 10 des dossiers (par montant facturé)")
     top10 = df.nlargest(10, "Montant facturé")[["Nom", "Montant facturé", "Total payé", "Solde restant"]]
     st.dataframe(top10, use_container_width=True)

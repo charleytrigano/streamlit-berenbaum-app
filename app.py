@@ -1,219 +1,96 @@
-# app.py — Version stable multi-feuilles
-# Lecture forcée de la feuille "Clients" pour le Dashboard
-
 import streamlit as st
 import pandas as pd
-from pathlib import Path
+import os
 
-# === PARAMÈTRES GLOBAUX ======================================================
-DEFAULT_XLSX = "Clients BL.xlsx"
-st.set_page_config(page_title="Visa Manager", layout="wide")
+st.set_page_config(page_title="📊 Visa Dashboard", layout="wide")
 
-# === 1. CHARGEMENT COMPLET DU FICHIER EXCEL =================================
-@st.cache_data(show_spinner=False)
-def _read_all_sheets():
-    """Lit toutes les feuilles du fichier Excel et les retourne sous forme de dict."""
-    xls_path = Path(DEFAULT_XLSX)
-    if not xls_path.exists():
-        st.warning(f"⚠️ Fichier « {DEFAULT_XLSX} » introuvable à la racine du projet.")
-        return {}
+# === CONFIGURATION ===
+EXCEL_FILE = "Clients BL.xlsx"
+SHEET_NAME = "Clients"
 
+# === FONCTIONS ===
+@st.cache_data
+def load_excel(path: str):
+    if not os.path.exists(path):
+        st.error(f"❌ Fichier introuvable : {path}")
+        return None
     try:
-        xls = pd.ExcelFile(xls_path)
-        data = {}
-        for sheet in xls.sheet_names:
-            try:
-                df = pd.read_excel(xls, sheet)
-                data[sheet] = df
-            except Exception as e:
-                st.warning(f"Erreur lecture feuille « {sheet} » : {e}")
-        return data
+        xls = pd.ExcelFile(path)
+        if SHEET_NAME not in xls.sheet_names:
+            st.error(f"❌ Feuille '{SHEET_NAME}' introuvable dans le fichier.")
+            return None
+        df = pd.read_excel(xls, SHEET_NAME)
+        return df
     except Exception as e:
-        st.error(f"Erreur lecture « {DEFAULT_XLSX} » : {e}")
-        return {}
+        st.error(f"Erreur lors du chargement du fichier : {e}")
+        return None
 
-if "data_xlsx" not in st.session_state:
-    st.session_state["data_xlsx"] = _read_all_sheets()
-
-
-# === 2. OUTILS NUMÉRIQUES ====================================================
-def _clean_number_series(s: pd.Series) -> pd.Series:
-    """Nettoie les séries de montants (texte → float)."""
-    if s is None:
-        return pd.Series(dtype=float)
-    s = s.astype(str)
-    s = (
-        s.str.replace("\u202f", "", regex=False)
-         .str.replace("\xa0", "", regex=False)
-         .str.replace(" ", "", regex=False)
-         .str.replace(r"[^\d\-,\.]", "", regex=True)
-    )
-    both = s.str.contains(r"\.") & s.str.contains(r",")
-    s = s.where(~both, s.str.replace(",", "", regex=False))
-    only_comma = s.str.contains(r",") & ~both
-    s = s.where(~only_comma, s.str.replace(",", ".", regex=False))
-    s = s.replace("", "0")
-    return pd.to_numeric(s, errors="coerce").fillna(0.0)
-
-def _ensure_cols(df: pd.DataFrame, cols):
+def clean_numeric(df, cols):
     for c in cols:
-        if c not in df.columns:
-            df[c] = 0.0
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
     return df
 
+# === CHARGEMENT AUTOMATIQUE ===
+df = load_excel(EXCEL_FILE)
 
-# === 3. ONGLET FICHIERS ======================================================
-def tab_fichiers():
-    st.header("📄 Fichiers")
+if df is None or df.empty:
+    st.warning("⚠️ Impossible de charger le fichier Excel. Vérifie le nom ou la feuille.")
+    st.stop()
 
-    data = st.session_state.get("data_xlsx", {})
-    if data:
-        st.success(f"📚 {len(data)} feuille(s) chargée(s) : {', '.join(data.keys())}")
-        sheet = st.selectbox("Afficher une feuille :", list(data.keys()))
-        st.dataframe(data[sheet].head(20), use_container_width=True, hide_index=True)
-    else:
-        st.warning("Aucune donnée chargée. Place ton fichier Excel à la racine du projet.")
-
-    st.markdown("---")
-    c1, c2 = st.columns(2)
-
-    with c1:
-        st.subheader("🔄 Recharger le fichier par défaut")
-        if st.button(f"Recharger « {DEFAULT_XLSX} »"):
-            st.session_state["data_xlsx"] = _read_all_sheets()
-            st.success("✅ Données rechargées.")
-            st.rerun()
-
-    with c2:
-        st.subheader("⬆️ Importer un autre fichier Excel")
-        up = st.file_uploader("Choisir un .xlsx", type=["xlsx"])
-        if up is not None:
-            try:
-                xls = pd.ExcelFile(up)
-                data = {s: pd.read_excel(xls, s) for s in xls.sheet_names}
-                st.session_state["data_xlsx"] = data
-                st.success(f"{len(data)} feuille(s) importée(s).")
-                st.rerun()
-            except Exception as e:
-                st.error(f"Erreur import : {e}")
-
-
-# === 4. ONGLET DASHBOARD =====================================================
-def tab_dashboard():
-    st.header("📊 Tableau de bord")
-
-    data = st.session_state.get("data_xlsx", {})
-    if not data:
-        st.warning("Aucune donnée Excel disponible.")
-        return
-
-    # 🔍 Lecture forcée de la feuille 'Clients'
-    if "Clients" in data:
-        df = data["Clients"].copy()
-    else:
-        st.error("Feuille 'Clients' introuvable dans le fichier Excel.")
-        st.stop()
-
-    if df.empty:
-        st.warning("La feuille 'Clients' est vide ou mal formatée.")
-        return
-
-    # Colonnes importantes
-    COL_HONO = "Montant honoraires (US $)"
-    COL_AUTRES = "Autres frais (US $)"
-    AC_COLS = ["Acompte 1", "Acompte 2", "Acompte 3", "Acompte 4"]
-
-    # Nettoyage et calculs
-    df = _ensure_cols(df, [COL_HONO, COL_AUTRES] + AC_COLS)
-    df[COL_HONO] = _clean_number_series(df[COL_HONO])
-    df[COL_AUTRES] = _clean_number_series(df[COL_AUTRES])
-    for c in AC_COLS:
-        df[c] = _clean_number_series(df[c])
-
-    df["Montant facturé"] = df[COL_HONO] + df[COL_AUTRES]
-    df["Total payé"] = df[AC_COLS].sum(axis=1)
-    df["Solde restant"] = df["Montant facturé"] - df["Total payé"]
-
-    # === Synthèse compacte
-    st.markdown("### 📈 Synthèse financière")
-    k1, k2, k3, k4, k5, k6 = st.columns(6)
-    k1.metric("👥 Clients", f"{len(df)}")
-    k2.metric("💼 Honoraires", f"{df[COL_HONO].sum():,.0f} US$")
-    k3.metric("🧾 Autres frais", f"{df[COL_AUTRES].sum():,.0f} US$")
-    k4.metric("💰 Facturé", f"{df['Montant facturé'].sum():,.0f} US$")
-    k5.metric("💸 Payé", f"{df['Total payé'].sum():,.0f} US$")
-    k6.metric("📉 Solde", f"{df['Solde restant'].sum():,.0f} US$")
-
-    # === Dossiers
-    st.markdown("---")
-    st.subheader("📋 Dossiers clients")
-    show_cols = [c for c in df.columns if c in ["Nom", COL_HONO, COL_AUTRES, "Montant facturé", "Total payé", "Solde restant"]]
-    if not show_cols:
-        show_cols = df.columns.tolist()[:6]
-    st.dataframe(df[show_cols], use_container_width=True, hide_index=True)
-
-    # === Top 10 (tableau, pas graphique)
-    st.markdown("---")
-    st.subheader("🏆 Top 10 par montant facturé")
-    top10 = df.sort_values("Montant facturé", ascending=False).head(10)
-    st.dataframe(top10[show_cols], use_container_width=True, hide_index=True)
-
-
-# === 5. ONGLET ESCROW ========================================================
-def tab_escrow():
-    st.header("🛡️ Escrow")
-
-    data = st.session_state.get("data_xlsx", {})
-    if not data or "Escrow" not in data:
-        st.warning("Feuille 'Escrow' introuvable dans le fichier Excel.")
-        return
-
-    df = data["Escrow"].copy()
-    st.dataframe(df, use_container_width=True, hide_index=True)
-
-
-# === 6. ONGLET COMPTA CLIENT ================================================
-def tab_compta():
-    st.header("💳 Compta Client")
-
-    data = st.session_state.get("data_xlsx", {})
-    if not data or "ComptaCli" not in data:
-        st.warning("Feuille 'ComptaCli' non trouvée.")
-        return
-
-    df = data["ComptaCli"].copy()
-    st.dataframe(df, use_container_width=True, hide_index=True)
-
-
-# === 7. ONGLET VISA =========================================================
-def tab_visa():
-    st.header("🛂 Visa")
-
-    data = st.session_state.get("data_xlsx", {})
-    if not data or "Visa" not in data:
-        st.warning("Feuille 'Visa' non trouvée.")
-        return
-
-    df = data["Visa"].copy()
-    st.dataframe(df, use_container_width=True, hide_index=True)
-
-
-# === 8. BARRE DE NAVIGATION =================================================
-tabs = st.tabs([
-    "📄 Fichiers",
-    "📊 Tableau de bord",
-    "🛂 Visa",
-    "💳 Compta Client",
-    "🛡️ Escrow"
+# === NORMALISATION ===
+df.columns = [c.strip() for c in df.columns]
+df = clean_numeric(df, [
+    "Montant honoraires (US $)",
+    "Autres frais (US $)",
+    "Acompte 1",
+    "Acompte 2",
+    "Acompte 3",
+    "Acompte 4"
 ])
 
-with tabs[0]:
-    tab_fichiers()
-with tabs[1]:
-    tab_dashboard()
-with tabs[2]:
-    tab_visa()
-with tabs[3]:
-    tab_compta()
-with tabs[4]:
-    tab_escrow()
+# === CALCULS FINANCIERS ===
+df["Montant facturé"] = df["Montant honoraires (US $)"] + df["Autres frais (US $)"]
+df["Total payé"] = df[["Acompte 1", "Acompte 2", "Acompte 3", "Acompte 4"]].sum(axis=1)
+df["Solde restant"] = df["Montant facturé"] - df["Total payé"]
+
+# === FILTRES ===
+with st.expander("🔍 Filtres"):
+    cols = st.columns(5)
+    f_cat = cols[0].selectbox("Catégorie", ["(Toutes)"] + sorted(df["Catégorie"].dropna().unique().tolist())) if "Catégorie" in df.columns else "(Toutes)"
+    f_scat = cols[1].selectbox("Sous-catégorie", ["(Toutes)"] + sorted(df["Sous-catégorie"].dropna().unique().tolist())) if "Sous-catégorie" in df.columns else "(Toutes)"
+    f_visa = cols[2].selectbox("Visa", ["(Tous)"] + sorted(df["Visa"].dropna().unique().tolist())) if "Visa" in df.columns else "(Tous)"
+    f_annee = cols[3].selectbox("Année", ["(Toutes)"] + sorted(df["Année"].dropna().unique().tolist())) if "Année" in df.columns else "(Toutes)"
+    f_mois = cols[4].selectbox("Mois", ["(Tous)"] + sorted(df["Mois"].dropna().unique().tolist())) if "Mois" in df.columns else "(Tous)"
+
+# Application des filtres
+mask = pd.Series(True, index=df.index)
+if f_cat != "(Toutes)": mask &= df["Catégorie"] == f_cat
+if f_scat != "(Toutes)": mask &= df["Sous-catégorie"] == f_scat
+if f_visa != "(Tous)": mask &= df["Visa"] == f_visa
+if f_annee != "(Toutes)": mask &= df["Année"] == f_annee
+if f_mois != "(Tous)": mask &= df["Mois"] == f_mois
+df_filtered = df[mask]
+
+# === KPIs COMPACTS ===
+st.markdown("## 📈 Synthèse financière")
+c1, c2, c3, c4, c5, c6 = st.columns(6)
+c1.metric("👥 Clients", f"{len(df_filtered)}")
+c2.metric("💼 Honoraires", f"{df_filtered['Montant honoraires (US $)'].sum():,.0f} US$")
+c3.metric("🧾 Autres frais", f"{df_filtered['Autres frais (US $)'].sum():,.0f} US$")
+c4.metric("💰 Facturé", f"{df_filtered['Montant facturé'].sum():,.0f} US$")
+c5.metric("💸 Payé", f"{df_filtered['Total payé'].sum():,.0f} US$")
+c6.metric("📉 Solde", f"{df_filtered['Solde restant'].sum():,.0f} US$")
+
+# === TABLEAU COMPLET ===
+st.markdown("---")
+st.subheader("📋 Dossiers clients filtrés")
+cols_show = ["Nom", "Montant honoraires (US $)", "Autres frais (US $)", "Montant facturé", "Total payé", "Solde restant"]
+cols_show = [c for c in cols_show if c in df_filtered.columns]
+st.dataframe(df_filtered[cols_show], use_container_width=True, hide_index=True)
+
+# === TOP 10 PAR MONTANT FACTURÉ ===
+st.markdown("---")
+st.subheader("🏆 Top 10 par montant facturé")
+top10 = df_filtered.sort_values("Montant facturé", ascending=False).head(10)
+st.dataframe(top10[cols_show], use_container_width=True, hide_index=True)

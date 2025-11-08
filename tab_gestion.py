@@ -21,11 +21,10 @@ def safe_date(val):
         pass
     return date.today()
 
-
 def to_float(val):
     """Convertit proprement en float pour éviter les 'nan', strings, etc."""
     try:
-        return float(str(val).replace(",", ".").strip()) if val not in ["", None, "nan", "NaN"] else 0.0
+        return float(str(val).replace(",", ".").strip()) if str(val).strip() not in ["", "nan", "NaN", "None"] else 0.0
     except Exception:
         return 0.0
 
@@ -63,12 +62,10 @@ def tab_gestion():
 
     st.markdown("### 🔧 Modifier le dossier sélectionné")
 
-    # --- Conversion date et montants ---
     date_parsed = safe_date(dossier_data.get("Date Acompte 1", ""))
     montant = to_float(dossier_data.get("Montant honoraires (US $)", 0))
     acompte = to_float(dossier_data.get("Acompte 1", 0))
 
-    # --- Formulaire ---
     nom = st.text_input("Nom du client", value=str(dossier_data.get("Nom", "")), key="gestion_nom")
     montant = st.number_input("Montant honoraires (US $)", min_value=0.0, value=montant, step=50.0, key="gestion_montant")
     acompte = st.number_input("Acompte 1", min_value=0.0, value=acompte, step=50.0, key="gestion_acompte")
@@ -79,7 +76,6 @@ def tab_gestion():
     st.markdown("---")
     col1, col2, col3 = st.columns(3)
 
-    # --- Enregistrement ---
     with col1:
         if st.button("💾 Enregistrer les modifications", key="gestion_save_btn"):
             idx = df_clients.index[df_clients["Dossier N"].astype(str) == selected_dossier][0]
@@ -90,9 +86,8 @@ def tab_gestion():
             df_clients.at[idx, "Escrow"] = escrow
             df_clients.at[idx, "Commentaires"] = commentaire
 
-            # === LOGIQUE ESCROW RENFORCÉE ===
+            # === CAS 1 : ESCROW coche OU acompte sans honoraire ===
             deja_escrow = selected_dossier in df_escrow["Dossier N"].astype(str).values
-
             montant_vide = (montant == 0 or pd.isna(montant))
             acompte_valide = (acompte > 0)
 
@@ -107,21 +102,40 @@ def tab_gestion():
                     "Commentaires": commentaire,
                 }
                 df_escrow = pd.concat([df_escrow, pd.DataFrame([new_row])], ignore_index=True)
-                st.success(f"✅ Dossier {selected_dossier} ajouté automatiquement dans Escrow (Acompte sans honoraires).")
-
+                st.success(f"✅ Dossier {selected_dossier} ajouté automatiquement dans Escrow.")
             elif deja_escrow:
                 st.info(f"ℹ️ Dossier {selected_dossier} déjà présent dans Escrow.")
-
             else:
                 st.info("Aucun ajout Escrow requis.")
 
-            # === Sauvegarde dans la session ===
+            # === CAS 2 : Vérification globale des autres dossiers ===
+            added = []
+            for _, row in df_clients.iterrows():
+                acompte_check = to_float(row.get("Acompte 1", 0))
+                montant_check = to_float(row.get("Montant honoraires (US $)", 0))
+                dossier_num = str(row.get("Dossier N", ""))
+                if acompte_check > 0 and montant_check == 0:
+                    if dossier_num not in df_escrow["Dossier N"].astype(str).values:
+                        df_escrow = pd.concat([df_escrow, pd.DataFrame([{
+                            "Dossier N": dossier_num,
+                            "Nom": row.get("Nom", ""),
+                            "Montant": acompte_check,
+                            "Date envoi": safe_date(row.get("Date Acompte 1", date.today())),
+                            "État": "En attente",
+                            "Date réclamation": "",
+                            "Commentaires": row.get("Commentaires", ""),
+                        }])], ignore_index=True)
+                        added.append(dossier_num)
+
+            if added:
+                st.success(f"✅ {len(added)} dossiers ajoutés automatiquement à Escrow : {', '.join(added)}")
+
             st.session_state["data_xlsx"]["Clients"] = df_clients
             st.session_state["data_xlsx"]["Escrow"] = df_escrow
 
             st.success("💾 Modifications enregistrées localement.")
 
-            # --- Choix du mode de sauvegarde ---
+            # === SAUVEGARDE ===
             save_mode = st.radio("Choisissez où sauvegarder :", ["💻 Local", "☁️ Dropbox"],
                                  horizontal=True, key="gestion_save_choice")
 

@@ -69,4 +69,21 @@ def tab_parametres():
     if st.button("🗑️ Réinitialiser la session"):
         st.session_state["data_xlsx"] = {}
         st.success("Session réinitialisée. Rechargez l’application.")
-        st.experimental_rerun()
+        st.rerun()
+
+import io
+
+if st.button("📥 Télécharger le fichier Excel mis à jour"):
+    with io.BytesIO() as buffer:
+        with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+            for sheet, df in st.session_state["data_xlsx"].items():
+                df.to_excel(writer, index=False, sheet_name=sheet)
+        buffer.seek(0)
+        st.download_button(
+            label="💾 Télécharger Clients BL.xlsx",
+            data=buffer,
+            file_name="Clients BL.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+
+

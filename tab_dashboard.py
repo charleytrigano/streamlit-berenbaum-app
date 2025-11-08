@@ -6,8 +6,8 @@ def _norm_cols(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     mapping_candidates = {
         "Visa": ["visa", "type visa", "type_de_visa", "type-visa"],
-        "Catégorie": ["catégorie", "categorie", "category"],
-        "Sous-catégorie": ["sous-catégorie", "sous categorie", "subcategory"],
+        "Catégorie": ["catégorie", "categorie", "category", "type dossier", "type de dossier"],
+        "Sous-catégorie": ["sous-catégorie", "sous categorie", "subcategory", "sous-type", "sous type"],
         "Année": ["année", "annee", "year"],
         "Mois": ["mois", "month"],
         "Montant honoraires (US $)": ["montant honoraires", "honoraires"],
@@ -28,7 +28,7 @@ def _norm_cols(df: pd.DataFrame) -> pd.DataFrame:
                 return lower2orig[cand]
         return None
 
-    # Renommer colonnes
+    # Renommer colonnes connues
     for target, cands in mapping_candidates.items():
         if target == "_date_probe_":
             continue
@@ -44,12 +44,12 @@ def _norm_cols(df: pd.DataFrame) -> pd.DataFrame:
             df[col] = 0
         df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
-    # Calculs
+    # Calculs principaux
     df["Montant facturé"] = df["Montant honoraires (US $)"] + df["Autres frais (US $)"]
     df["Total payé"] = df[["Acompte 1", "Acompte 2", "Acompte 3", "Acompte 4"]].sum(axis=1)
     df["Solde restant"] = df["Montant facturé"] - df["Total payé"]
 
-    # Déduire Année / Mois
+    # Année / Mois
     mois_fr = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
                "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
 
@@ -74,6 +74,10 @@ def _norm_cols(df: pd.DataFrame) -> pd.DataFrame:
     for c in ["Catégorie", "Sous-catégorie", "Visa"]:
         if c not in df.columns:
             df[c] = ""
+
+    # Nettoyage espaces / majuscules
+    for c in ["Catégorie", "Sous-catégorie", "Visa"]:
+        df[c] = df[c].astype(str).str.strip().str.title()
 
     return df
 
@@ -105,7 +109,7 @@ def tab_dashboard():
     def _opts(dfcol, all_label="(Tous)"):
         if dfcol not in df.columns:
             return [all_label]
-        vals = sorted([str(v) for v in df[dfcol].dropna().unique().tolist() if str(v).strip() != ""])
+        vals = sorted([v for v in df[dfcol].dropna().unique().tolist() if str(v).strip() != ""])
         return [all_label] + vals if vals else [all_label]
 
     categorie = col1.selectbox("Catégorie", _opts("Catégorie", "(Toutes)"), key="dash_cat")
@@ -114,6 +118,7 @@ def tab_dashboard():
     annee = col4.selectbox("Année", _opts("Année", "(Toutes)"), key="dash_annee")
     mois = col5.selectbox("Mois", _opts("Mois", "(Tous)"), key="dash_mois")
 
+    # Application des filtres
     if categorie != "(Toutes)":
         df = df[df["Catégorie"] == categorie]
     if souscat != "(Toutes)":
@@ -134,8 +139,10 @@ def tab_dashboard():
     total_facture = df["Montant facturé"].sum()
     total_paye = df["Total payé"].sum()
     total_solde = df["Solde restant"].sum()
+    nb_dossiers = len(df)
 
-    c1, c2, c3, c4, c5 = st.columns(5)
+    c0, c1, c2, c3, c4, c5 = st.columns(6)
+    c0.metric("📁 Dossiers", f"{nb_dossiers:,}")
     c1.metric("Honoraires", f"{total_honoraire:,.0f} $")
     c2.metric("Autres frais", f"{total_autres:,.0f} $")
     c3.metric("Facturé", f"{total_facture:,.0f} $")
@@ -154,7 +161,6 @@ def tab_dashboard():
     cols_exist = [c for c in colonnes_aff if c in df.columns]
     df_view = df[cols_exist].copy()
 
-    # Correction : formater uniquement les colonnes numériques présentes
     numeric_cols = [c for c in df_view.columns if pd.api.types.is_numeric_dtype(df_view[c])]
     st.dataframe(
         df_view.style.format(subset=numeric_cols, formatter="{:,.2f}"),

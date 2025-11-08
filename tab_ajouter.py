@@ -3,108 +3,129 @@ import pandas as pd
 import numpy as np
 from datetime import date
 
-# ===================== Onglet AJOUTER =====================
-
 def tab_ajouter():
-    st.header("➕ Ajouter un dossier")
+    st.header("🧾 Ajouter un dossier client")
 
-    # Vérifier que le fichier Excel est chargé
+    # Vérifie la présence du fichier
     if "data_xlsx" not in st.session_state or not st.session_state["data_xlsx"]:
-        st.warning("⚠️ Aucune donnée disponible. Chargez d'abord le fichier Excel via l'onglet 📄 Fichiers.")
+        st.warning("⚠️ Aucun fichier Excel chargé. Passe d'abord par l'onglet 📄 Fichiers.")
         return
 
     data = st.session_state["data_xlsx"]
-
-    # Vérifier la présence de la feuille Clients
     if "Clients" not in data:
-        st.error("❌ Feuille 'Clients' manquante.")
+        st.error("❌ Feuille 'Clients' manquante dans le fichier Excel.")
         return
 
     df = data["Clients"].copy()
 
-    # On s’assure que toutes les colonnes nécessaires existent
+    # Colonnes nécessaires
     required_cols = [
-        "Nom", "Visa", "Categories", "Sous-categories",
-        "Date", "Montant honoraires (US $)", "Autres frais (US $)",
-        "Acompte 1", "Date Acompte 1", "Mode de paiement",
-        "Montant facturé", "Total payé", "Solde restant"
+        "Dossier N", "Nom", "Date", "Categories", "Sous-categories", "Visa",
+        "Montant honoraires (US $)", "Acompte 1", "Date Acompte 1",
+        "Mode de paiement", "Escrow", "Commentaires",
+        "Autres frais (US $)", "Montant facturé", "Total payé", "Solde restant"
     ]
     for col in required_cols:
         if col not in df.columns:
             df[col] = np.nan
 
-    # ===================== FORMULAIRE =====================
+    # ========== NUMÉRO DE DOSSIER AUTOMATIQUE ==========
+    try:
+        last_num = df["Dossier N"].dropna().astype(str).str.extract(r'(\d+)').dropna().astype(int).max().values[0]
+        dossier_n = str(last_num + 1)
+    except Exception:
+        dossier_n = "1"
 
-    st.subheader("🧾 Informations principales")
+    # ===================== LIGNE 1 =====================
+    st.subheader("📋 Informations principales")
 
-    c1, c2 = st.columns(2)
-    with c1:
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col1:
+        st.text_input("Dossier N°", value=dossier_n, disabled=True)
+    with col2:
         nom = st.text_input("Nom du client *")
-        categorie = st.text_input("Catégorie")
-    with c2:
-        visa = st.text_input("Visa")
-        sous_categorie = st.text_input("Sous-catégorie")
-
-    st.subheader("📅 Dates")
-    c3, c4 = st.columns(2)
-    with c3:
+    with col3:
         date_creation = st.date_input("Date (création du dossier)", value=date.today())
-    with c4:
-        date_acompte1 = st.date_input("Date Acompte 1", value=None)
 
-    st.subheader("💵 Montants")
-    c5, c6, c7 = st.columns(3)
+    # ===================== LIGNE 2 =====================
+    st.markdown("### 🗂️ Classification du dossier")
+
+    c4, c5, c6 = st.columns(3)
+    with c4:
+        categorie = st.text_input("Catégorie")
     with c5:
-        montant_h = st.number_input("Montant honoraires (US $)", min_value=0.0, step=100.0)
+        sous_categorie = st.text_input("Sous-catégorie")
     with c6:
-        autres_f = st.number_input("Autres frais (US $)", min_value=0.0, step=50.0)
+        visa = st.text_input("Visa")
+
+    # ===================== LIGNE 3 =====================
+    st.markdown("### 💰 Détails financiers")
+
+    c7, c8, c9 = st.columns(3)
     with c7:
+        montant_h = st.number_input("Montant honoraires (US $)", min_value=0.0, step=100.0)
+    with c8:
+        date_acompte1 = st.date_input("Date Acompte 1", value=None)
+    with c9:
         acompte1 = st.number_input("Acompte 1", min_value=0.0, step=50.0)
 
-    st.subheader("🏦 Mode de paiement")
-    cb1, cb2, cb3, cb4 = st.columns(4)
+    # ===================== LIGNE 4 =====================
+    st.markdown("### 🏦 Mode de paiement")
+
+    mode_col, cb1, cb2, cb3, cb4 = st.columns([2, 1, 1, 1, 1])
+    with mode_col:
+        st.write("Sélectionnez un ou plusieurs modes :")
     with cb1:
-        chq = st.checkbox("Chèque")
+        cheque = st.checkbox("Chèque")
     with cb2:
-        vir = st.checkbox("Virement")
+        virement = st.checkbox("Virement")
     with cb3:
-        cb = st.checkbox("Carte de crédit")
+        carte = st.checkbox("Carte bancaire")
     with cb4:
         venmo = st.checkbox("Venmo")
 
     mode_paiement = ", ".join(
         [m for m, v in {
-            "Chèque": chq,
-            "Virement": vir,
-            "Carte de crédit": cb,
+            "Chèque": cheque,
+            "Virement": virement,
+            "Carte bancaire": carte,
             "Venmo": venmo
         }.items() if v]
     )
 
-    st.markdown("---")
+    # ===================== LIGNE 5 =====================
+    st.markdown("### 🛡️ Escrow")
+    escrow = st.text_input("Référence Escrow (si applicable)")
+
+    # ===================== LIGNE 6 =====================
+    st.markdown("### 🗒️ Commentaires")
+    commentaires = st.text_area("Commentaires", height=100)
 
     # ===================== SAUVEGARDE =====================
-
+    st.markdown("---")
     if st.button("💾 Enregistrer le dossier"):
         if not nom.strip():
             st.error("Le nom du client est obligatoire.")
             return
 
-        montant_facture = montant_h + autres_f
+        montant_facture = montant_h
         total_paye = acompte1
         solde = montant_facture - total_paye
 
         new_row = pd.DataFrame([{
-            "Nom": nom,
-            "Visa": visa,
-            "Categories": categorie,
-            "Sous-categories": sous_categorie,
+            "Dossier N": dossier_n,
+            "Nom": nom.strip(),
             "Date": date_creation.isoformat(),
+            "Categories": categorie.strip(),
+            "Sous-categories": sous_categorie.strip(),
+            "Visa": visa.strip(),
             "Montant honoraires (US $)": montant_h,
-            "Autres frais (US $)": autres_f,
             "Acompte 1": acompte1,
             "Date Acompte 1": date_acompte1.isoformat() if date_acompte1 else "",
             "Mode de paiement": mode_paiement,
+            "Escrow": escrow.strip(),
+            "Commentaires": commentaires.strip(),
+            "Autres frais (US $)": 0.0,
             "Montant facturé": montant_facture,
             "Total payé": total_paye,
             "Solde restant": solde
@@ -113,7 +134,6 @@ def tab_ajouter():
         df = pd.concat([df, new_row], ignore_index=True)
         st.session_state["data_xlsx"]["Clients"] = df
 
-        # Sauvegarde locale si possible
         try:
             with pd.ExcelWriter("Clients BL.xlsx", mode="w", engine="openpyxl") as writer:
                 for sheet, d in st.session_state["data_xlsx"].items():
@@ -122,4 +142,5 @@ def tab_ajouter():
         except Exception:
             st.warning("⚠️ Dossier ajouté en mémoire (sauvegarde locale impossible sur Streamlit Cloud).")
 
-        st.dataframe(new_row, use_container_width=True)
+        st.markdown("### ✅ Aperçu du dossier ajouté")
+        st.dataframe(new_row, use_container_width=True, height=160)

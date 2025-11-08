@@ -1,118 +1,83 @@
 import streamlit as st
 import pandas as pd
-import io
-import dropbox
-
 
 def tab_escrow():
-    """Onglet Escrow - gestion des acomptes en attente et réclamations."""
-    st.header("🛡️ Gestion Escrow")
+    """Onglet Escrow — suivi des dossiers en attente de règlement."""
+    st.header("🛡️ Gestion des dossiers Escrow")
 
-    # Vérifie si les données Excel sont chargées
+    # Vérifier que les données sont disponibles
     if "data_xlsx" not in st.session_state or not st.session_state["data_xlsx"]:
-        st.warning("⚠️ Aucune donnée chargée. Chargez d'abord le fichier Excel via '📄 Fichiers'.")
+        st.warning("⚠️ Aucune donnée disponible. Chargez le fichier Excel via 📄 Fichiers.")
         return
 
     data = st.session_state["data_xlsx"]
 
-    # Vérifie la présence de la feuille Escrow
-    if "Escrow" not in data:
-        st.error("❌ Feuille 'Escrow' manquante dans le fichier Excel.")
+    # Rechercher la feuille Escrow (insensible à la casse)
+    escrow_key = None
+    for key in data.keys():
+        if key.strip().lower() == "escrow":
+            escrow_key = key
+            break
+
+    if not escrow_key:
+        st.warning("⚠️ Feuille Escrow non trouvée.")
         return
 
-    df_escrow = data["Escrow"].copy()
+    df = data[escrow_key].copy()
 
-    st.markdown("### 💰 Dossiers Escrow enregistrés")
+    if df.empty:
+        st.info("Aucun dossier en Escrow pour le moment.")
+        return
 
-    if df_escrow.empty:
-        st.info("Aucun dossier dans Escrow.")
-    else:
-        st.dataframe(df_escrow, use_container_width=True, height=350)
-
-    st.markdown("---")
-    st.subheader("➕ Ajouter un dossier à Escrow")
-
-    # Formulaire d’ajout Escrow avec clés uniques
-    dossier = st.text_input("Numéro de dossier", key="escrow_dossier_add")
-    nom = st.text_input("Nom du client", key="escrow_nom_add")
-    montant = st.number_input("Montant Acompte (US $)", min_value=0.0, step=50.0, key="escrow_montant_add")
-    date_envoi = st.date_input("Date d’envoi en Escrow", key="escrow_date_envoi_add")
-    commentaire = st.text_area("Commentaires", key="escrow_comment_add")
-
-    st.markdown("### ⚙️ Gestion du statut")
-
-    reclamation = st.checkbox("Dossier réclamé ?", key="escrow_reclamation_add")
-    date_reclamation = st.date_input("Date de réclamation (si applicable)", key="escrow_date_recl_add")
-
-    if st.button("💾 Enregistrer dans Escrow", key="escrow_save_btn"):
-        new_row = {
-            "Dossier N": dossier,
-            "Nom": nom,
-            "Montant": montant,
-            "Date envoi": date_envoi,
-            "État": "Réclamé" if reclamation else "En attente",
-            "Date réclamation": date_reclamation if reclamation else "",
-            "Commentaires": commentaire,
-        }
-
-        df_escrow = pd.concat([df_escrow, pd.DataFrame([new_row])], ignore_index=True)
-        st.session_state["data_xlsx"]["Escrow"] = df_escrow
-
-        # Sauvegarde sur Dropbox
+    # Nettoyage et formatage
+    def _to_float(x):
         try:
-            token = st.secrets["DROPBOX_TOKEN"]
-            folder = st.secrets.get("DROPBOX_FOLDER", "/")
-            dbx = dropbox.Dropbox(token)
+            s = str(x).replace(",", ".").replace("\u00A0", "").strip()
+            return float(s) if s not in ["", "nan", "None"] else 0.0
+        except:
+            return 0.0
 
-            with io.BytesIO() as buffer:
-                with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-                    for sheet, df in st.session_state["data_xlsx"].items():
-                        df.to_excel(writer, index=False, sheet_name=sheet)
-                buffer.seek(0)
-                dbx.files_upload(buffer.read(), f"{folder}/Clients BL.xlsx", mode=dropbox.files.WriteMode("overwrite"))
-            st.success("✅ Dossier ajouté et fichier sauvegardé sur Dropbox.")
-        except Exception as e:
-            st.warning(f"⚠️ Sauvegarde Dropbox échouée : {e}")
+    if "Montant" in df.columns:
+        df["Montant"] = df["Montant"].map(_to_float)
 
-    st.markdown("---")
-    st.subheader("🔄 Marquer un dossier comme réclamé")
+    st.subheader(f"📦 Dossiers en Escrow ({len(df)})")
+    st.dataframe(df, use_container_width=True, height=350)
 
-    num_recl = st.text_input("Numéro du dossier à marquer", key="escrow_mark_num")
-    if st.button("📬 Marquer comme réclamé", key="escrow_mark_btn"):
-        if num_recl and num_recl in df_escrow["Dossier N"].astype(str).values:
-            df_escrow.loc[df_escrow["Dossier N"].astype(str) == num_recl, "État"] = "Réclamé"
-            df_escrow.loc[df_escrow["Dossier N"].astype(str) == num_recl, "Date réclamation"] = pd.Timestamp.now().date()
-            st.session_state["data_xlsx"]["Escrow"] = df_escrow
-
-            # Sauvegarde automatique
-            try:
-                token = st.secrets["DROPBOX_TOKEN"]
-                folder = st.secrets.get("DROPBOX_FOLDER", "/")
-                dbx = dropbox.Dropbox(token)
-
-                with io.BytesIO() as buffer:
-                    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-                        for sheet, df in st.session_state["data_xlsx"].items():
-                            df.to_excel(writer, index=False, sheet_name=sheet)
-                    buffer.seek(0)
-                    dbx.files_upload(buffer.read(), f"{folder}/Clients BL.xlsx", mode=dropbox.files.WriteMode("overwrite"))
-                st.success(f"📩 Dossier {num_recl} marqué comme réclamé et sauvegardé.")
-            except Exception as e:
-                st.warning(f"⚠️ Sauvegarde Dropbox échouée : {e}")
-        else:
-            st.warning("Numéro de dossier introuvable dans Escrow.")
+    # Calcul total
+    total_escrow = df["Montant"].sum() if "Montant" in df.columns else 0.0
+    st.metric("💰 Total Escrow", f"${total_escrow:,.2f}")
 
     st.markdown("---")
-    st.subheader("📤 Télécharger Escrow")
 
-    if st.button("Générer fichier Escrow", key="escrow_dl_btn"):
-        with io.BytesIO() as buffer:
-            df_escrow.to_excel(buffer, index=False, sheet_name="Escrow")
-            buffer.seek(0)
-            st.download_button(
-                label="💾 Télécharger Escrow.xlsx",
-                data=buffer,
-                file_name="Escrow.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key="escrow_dl_button"
-            )
+    # Gestion des actions
+    st.subheader("📝 Mettre à jour l'état d'un dossier")
+    dossier_id = st.text_input("Numéro de dossier à mettre à jour")
+    new_state = st.selectbox("Nouvel état", ["", "En attente", "Réclamé", "Réglé"])
+
+    if st.button("✅ Mettre à jour l'état"):
+        if dossier_id and new_state:
+            mask = df["Dossier N"].astype(str) == dossier_id
+            if mask.any():
+                df.loc[mask, "État"] = new_state
+                if new_state == "Réclamé":
+                    df.loc[mask, "Date réclamation"] = pd.Timestamp.now().strftime("%Y-%m-%d")
+                data[escrow_key] = df
+                st.session_state["data_xlsx"] = data
+                st.success(f"✅ Dossier {dossier_id} mis à jour ({new_state}).")
+            else:
+                st.warning("Numéro de dossier introuvable.")
+
+    st.markdown("---")
+
+    st.subheader("📤 Exporter la liste Escrow")
+    if st.button("💾 Télécharger au format Excel"):
+        from io import BytesIO
+        buffer = BytesIO()
+        with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+            df.to_excel(writer, index=False, sheet_name="Escrow")
+        st.download_button(
+            label="⬇️ Télécharger Escrow.xlsx",
+            data=buffer.getvalue(),
+            file_name="Escrow.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )

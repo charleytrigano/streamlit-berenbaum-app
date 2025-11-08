@@ -27,7 +27,6 @@ def tab_gestion():
 
     st.header("✏️ / 🗑️ Gestion des dossiers")
 
-    # Vérification du chargement
     if "data_xlsx" not in st.session_state or not st.session_state["data_xlsx"]:
         st.warning("⚠️ Aucune donnée disponible. Chargez d'abord le fichier Excel via l'onglet 📄 Fichiers.")
         return
@@ -47,10 +46,9 @@ def tab_gestion():
         st.info("Aucun dossier client enregistré.")
         return
 
-    # Sélection du dossier
+    # --- Sélection du dossier ---
     dossier_list = df_clients["Dossier N"].astype(str).tolist()
     selected_dossier = st.selectbox("Sélectionnez un dossier :", options=[""] + dossier_list, key="gestion_dossier_select")
-
     if not selected_dossier:
         st.stop()
 
@@ -58,7 +56,6 @@ def tab_gestion():
 
     st.markdown("### 🔧 Modifier le dossier sélectionné")
 
-    # --- Conversion date ---
     date_parsed = safe_date(dossier_data.get("Date Acompte 1", ""))
 
     # --- Formulaire ---
@@ -74,7 +71,7 @@ def tab_gestion():
     st.markdown("---")
     col1, col2, col3 = st.columns(3)
 
-    # --- Enregistrement des modifications ---
+    # --- Enregistrement ---
     with col1:
         if st.button("💾 Enregistrer les modifications", key="gestion_save_btn"):
             idx = df_clients.index[df_clients["Dossier N"].astype(str) == selected_dossier][0]
@@ -85,8 +82,13 @@ def tab_gestion():
             df_clients.at[idx, "Escrow"] = escrow
             df_clients.at[idx, "Commentaires"] = commentaire
 
-            # Si Escrow ou acompte sans honoraires → ajout auto dans Escrow
-            if escrow or (acompte > 0 and montant == 0):
+            # === Nouvelle logique Escrow ===
+            # Vérifie si le dossier est déjà dans Escrow
+            deja_escrow = selected_dossier in df_escrow["Dossier N"].astype(str).values
+
+            # Cas 1 : case cochée → ajout forcé
+            # Cas 2 : acompte > 0 et honoraires == 0 → ajout auto
+            if (escrow or (acompte > 0 and montant == 0)) and not deja_escrow:
                 new_row = {
                     "Dossier N": selected_dossier,
                     "Nom": nom,
@@ -97,10 +99,13 @@ def tab_gestion():
                     "Commentaires": commentaire,
                 }
                 df_escrow = pd.concat([df_escrow, pd.DataFrame([new_row])], ignore_index=True)
-                st.success("✅ Dossier ajouté automatiquement dans Escrow.")
+                st.success(f"✅ Dossier {selected_dossier} ajouté automatiquement dans Escrow.")
+            elif deja_escrow:
+                st.info(f"ℹ️ Dossier {selected_dossier} déjà présent dans Escrow.")
             else:
                 st.info("Aucun ajout Escrow requis.")
 
+            # Mise à jour du session_state
             st.session_state["data_xlsx"]["Clients"] = df_clients
             st.session_state["data_xlsx"]["Escrow"] = df_escrow
 
@@ -137,7 +142,6 @@ def tab_gestion():
                 except Exception as e:
                     st.warning(f"⚠️ Sauvegarde Dropbox échouée : {e}")
 
-    # --- Suppression du dossier ---
     with col2:
         if st.button("🗑️ Supprimer le dossier", key="gestion_delete_btn"):
             df_clients = df_clients[df_clients["Dossier N"].astype(str) != selected_dossier]

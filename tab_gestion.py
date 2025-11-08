@@ -108,7 +108,7 @@ def tab_gestion():
             else:
                 st.info("💾 Modifications enregistrées.")
 
-            st.experimental_rerun()
+            st.rerun()
 
     with col2:
         if st.button("🗑️ Supprimer le dossier"):
@@ -119,3 +119,4 @@ def tab_gestion():
 
     with col3:
         st.info("💡 Les sauvegardes peuvent être faites localement ou via Dropbox.")
+

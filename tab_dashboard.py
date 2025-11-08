@@ -5,16 +5,13 @@ from datetime import datetime
 # ===================== UTILITAIRES =====================
 
 def _lower_map(columns):
-    """Crée un dictionnaire {lowercase: nom_original} pour les colonnes."""
     return {str(c).strip().lower(): c for c in columns}
 
 def _find_present(df, candidates):
-    """Renvoie les colonnes présentes parmi une liste de candidats."""
     lmap = _lower_map(df.columns)
     return [lmap[c.lower()] for c in candidates if c.lower() in lmap]
 
 def _best_source(df, candidates):
-    """Choisit la colonne la plus remplie parmi les candidats."""
     found = _find_present(df, candidates)
     if not found:
         return None
@@ -25,7 +22,6 @@ def _best_source(df, candidates):
     return counts[0][0]
 
 def _ensure_std_col(df, std_name, candidates, transform=None, default_value=""):
-    """Crée une colonne standard à partir de candidats existants."""
     if std_name in df.columns:
         s = df[std_name]
     else:
@@ -69,24 +65,20 @@ def _norm_cols(df: pd.DataFrame) -> pd.DataFrame:
         "Acompte 1", "Acompte 2", "Acompte 3", "Acompte 4"
     ]
 
-    # Colonnes de texte principales
     df = _ensure_std_col(df, "Nom", CAND["Nom"])
     df = _ensure_std_col(df, "Visa", CAND["Visa"], transform=lambda s: s.str.title())
     df = _ensure_std_col(df, "Catégorie", CAND["Catégorie"], transform=lambda s: s.str.title())
     df = _ensure_std_col(df, "Sous-catégorie", CAND["Sous-catégorie"], transform=lambda s: s.str.title())
 
-    # Colonnes numériques
     for col in NUMS:
         if col not in df.columns:
             df[col] = 0
         df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
-    # Calculs financiers
     df["Montant facturé"] = df["Montant honoraires (US $)"] + df["Autres frais (US $)"]
     df["Total payé"] = df[["Acompte 1", "Acompte 2", "Acompte 3", "Acompte 4"]].sum(axis=1)
     df["Solde restant"] = df["Montant facturé"] - df["Total payé"]
 
-    # Année / Mois
     MONTHS_FR = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
                  "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
 
@@ -150,36 +142,71 @@ def tab_dashboard():
     annee     = col4.selectbox("Année", _opts_from(df, "Année", "(Toutes)"), key="dash_annee")
     mois      = col5.selectbox("Mois", _opts_from(df, "Mois", "(Tous)"), key="dash_mois")
 
-    # Application des filtres
-    if categorie != "(Toutes)":
-        df = df[df["Catégorie"] == categorie]
-    if souscat != "(Toutes)":
-        df = df[df["Sous-catégorie"] == souscat]
-    if visa != "(Tous)":
-        df = df[df["Visa"] == visa]
-    if annee != "(Toutes)":
-        df = df[df["Année"].astype(str) == str(annee)]
-    if mois != "(Tous)":
-        df = df[df["Mois"].astype(str) == str(mois)]
+    # ======= Filtre période comparative =======
+    st.markdown("### ⏳ Comparatif entre périodes")
+    colp1, colp2, colp3, colp4 = st.columns(4)
+    annee_deb = colp1.selectbox("Année début", _opts_from(df, "Année", "(Toutes)"), key="cmp_annee_deb")
+    mois_deb  = colp2.selectbox("Mois début", _opts_from(df, "Mois", "(Tous)"), key="cmp_mois_deb")
+    annee_fin = colp3.selectbox("Année fin", _opts_from(df, "Année", "(Toutes)"), key="cmp_annee_fin")
+    mois_fin  = colp4.selectbox("Mois fin", _opts_from(df, "Mois", "(Tous)"), key="cmp_mois_fin")
 
     st.markdown("---")
 
-    # ======= KPI =======
-    st.subheader("📊 Synthèse financière")
-    total_honoraire = df["Montant honoraires (US $)"].sum()
-    total_autres = df["Autres frais (US $)"].sum()
-    total_facture = df["Montant facturé"].sum()
-    total_paye = df["Total payé"].sum()
-    total_solde = df["Solde restant"].sum()
-    nb_dossiers = len(df)
+    # ======= Application des filtres =======
+    dff = df.copy()
+    if categorie != "(Toutes)":
+        dff = dff[dff["Catégorie"] == categorie]
+    if souscat != "(Toutes)":
+        dff = dff[dff["Sous-catégorie"] == souscat]
+    if visa != "(Tous)":
+        dff = dff[dff["Visa"] == visa]
+    if annee != "(Toutes)":
+        dff = dff[dff["Année"].astype(str) == str(annee)]
+    if mois != "(Tous)":
+        dff = dff[dff["Mois"].astype(str) == str(mois)]
 
+    # ======= KPI compacts =======
+    st.subheader("📈 Synthèse financière")
+    total_honoraire = dff["Montant honoraires (US $)"].sum()
+    total_autres = dff["Autres frais (US $)"].sum()
+    total_facture = dff["Montant facturé"].sum()
+    total_paye = dff["Total payé"].sum()
+    total_solde = dff["Solde restant"].sum()
+    nb_dossiers = len(dff)
+
+    # KPI compacts : 6 colonnes réduites
     c0, c1, c2, c3, c4, c5 = st.columns(6)
-    c0.metric("📁 Dossiers", f"{nb_dossiers:,}")
-    c1.metric("Honoraires", f"{total_honoraire:,.0f} $")
-    c2.metric("Autres frais", f"{total_autres:,.0f} $")
-    c3.metric("Facturé", f"{total_facture:,.0f} $")
-    c4.metric("Payé", f"{total_paye:,.0f} $")
-    c5.metric("Solde", f"{total_solde:,.0f} $")
+    c0.metric("📁", f"{nb_dossiers:,}", "Dossiers")
+    c1.metric("💰", f"{total_honoraire:,.0f}", "Honoraires")
+    c2.metric("💼", f"{total_autres:,.0f}", "Autres frais")
+    c3.metric("🧾", f"{total_facture:,.0f}", "Facturé")
+    c4.metric("💳", f"{total_paye:,.0f}", "Payé")
+    c5.metric("⚖️", f"{total_solde:,.0f}", "Solde")
+
+    st.markdown("---")
+
+    # ======= Comparatif entre périodes =======
+    if annee_deb != "(Toutes)" and annee_fin != "(Toutes)":
+        df_deb = df[(df["Année"].astype(str) == str(annee_deb)) &
+                    (df["Mois"].astype(str) == str(mois_deb))]
+        df_fin = df[(df["Année"].astype(str) == str(annee_fin)) &
+                    (df["Mois"].astype(str) == str(mois_fin))]
+
+        if not df_deb.empty and not df_fin.empty:
+            total_deb = df_deb["Montant facturé"].sum()
+            total_fin = df_fin["Montant facturé"].sum()
+            delta = total_fin - total_deb
+            pct = (delta / total_deb * 100) if total_deb else 0
+
+            st.info(f"**Comparatif :** {mois_deb} {annee_deb} → {mois_fin} {annee_fin}")
+            colA, colB, colC = st.columns(3)
+            colA.metric("Début", f"{total_deb:,.0f} $")
+            colB.metric("Fin", f"{total_fin:,.0f} $")
+            colC.metric("Évolution", f"{delta:,.0f} $", f"{pct:+.1f}%")
+        else:
+            st.warning("Sélectionne des périodes contenant des données.")
+    else:
+        st.caption("Choisis deux périodes pour afficher le comparatif.")
 
     st.markdown("---")
 
@@ -190,25 +217,21 @@ def tab_dashboard():
         "Montant honoraires (US $)", "Autres frais (US $)",
         "Montant facturé", "Total payé", "Solde restant"
     ]
-    cols_exist = [c for c in colonnes_aff if c in df.columns]
-    df_view = df[cols_exist].copy()
+    cols_exist = [c for c in colonnes_aff if c in dff.columns]
+    df_view = dff[cols_exist].copy()
     numeric_cols = [c for c in df_view.columns if pd.api.types.is_numeric_dtype(df_view[c])]
     st.dataframe(
         df_view.style.format(subset=numeric_cols, formatter="{:,.2f}"),
         use_container_width=True,
-        height=420,
+        height=400,
     )
-
-    st.markdown("---")
 
     # ======= Top 10 =======
     st.subheader("🏆 Top 10 des dossiers (par montant facturé)")
-    if "Montant facturé" in df.columns:
-        top10 = df.nlargest(10, "Montant facturé")[["Nom", "Visa", "Montant facturé", "Total payé", "Solde restant"]]
+    if "Montant facturé" in dff.columns:
+        top10 = dff.nlargest(10, "Montant facturé")[["Nom", "Visa", "Montant facturé", "Total payé", "Solde restant"]]
         st.dataframe(
             top10.style.format(subset=["Montant facturé", "Total payé", "Solde restant"], formatter="{:,.2f}"),
             use_container_width=True,
-            height=380,
+            height=320,
         )
-    else:
-        st.info("Colonne 'Montant facturé' absente.")

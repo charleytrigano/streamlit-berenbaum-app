@@ -19,20 +19,22 @@ def tab_ajouter():
     df_clients = data["Clients"].copy()
     df_visa = data["Visa"].copy()
 
-    # 🔍 Normalisation des colonnes
+    # 🔍 Normaliser les noms de colonnes
     df_visa.columns = [c.strip().replace("é", "e").replace("è", "e").replace("É", "E").replace("ê", "e") for c in df_visa.columns]
 
     col_categorie = next((c for c in df_visa.columns if "categorie" in c.lower()), None)
     col_souscat = next((c for c in df_visa.columns if "sous" in c.lower()), None)
 
-    # Catégories
-    categories = sorted(df_visa[col_categorie].dropna().unique().tolist()) if col_categorie else []
+    if not col_categorie or not col_souscat:
+        st.error("❌ Impossible d’identifier les colonnes 'Catégories' et 'Sous-catégories' dans la feuille Visa.")
+        return
 
-    # Sélection Catégorie → Sous-catégorie dépendante
+    categories = sorted(df_visa[col_categorie].dropna().unique().tolist())
+
+    # ========== Bloc principal ==========
     st.subheader("📋 Informations principales")
     c1, c2, c3 = st.columns([1, 2, 1])
     with c1:
-        # Numérotation automatique
         try:
             last_num = (
                 df_clients["Dossier N"].dropna().astype(str).str.extract(r"(\d+)").dropna().astype(int).max().values[0]
@@ -46,19 +48,36 @@ def tab_ajouter():
     with c3:
         date_creation = st.date_input("Date (création du dossier)", value=date.today())
 
+    # ========== Catégorie / Sous-catégorie ==========
     st.markdown("### 🗂️ Classification du dossier")
-    c4, c5 = st.columns(2)
+    c4, c5, c6 = st.columns(3)
     with c4:
         categorie = st.selectbox("Catégorie", options=[""] + categories)
     with c5:
         if categorie:
             sous_df = df_visa[df_visa[col_categorie] == categorie]
-            sous_categories = sorted(sous_df[col_souscat].dropna().unique().tolist()) if col_souscat else []
+            sous_categories = sorted(sous_df[col_souscat].dropna().unique().tolist())
         else:
+            sous_df = pd.DataFrame()
             sous_categories = []
         sous_categorie = st.selectbox("Sous-catégorie", options=[""] + sous_categories)
+    with c6:
+        # ⚙️ Détection des visas possibles pour la sous-catégorie
+        if categorie and sous_categorie:
+            line = df_visa[(df_visa[col_categorie] == categorie) & (df_visa[col_souscat] == sous_categorie)]
+            if not line.empty:
+                visa_possibles = [
+                    col for col in df_visa.columns
+                    if col not in [col_categorie, col_souscat]
+                    and str(line.iloc[0][col]).strip() == "1"
+                ]
+            else:
+                visa_possibles = []
+        else:
+            visa_possibles = []
+        visa = st.selectbox("Visa", options=[""] + visa_possibles)
 
-    # ============================================
+    # ========== Détails financiers ==========
     st.markdown("### 💰 Détails financiers")
     c7, c8, c9 = st.columns(3)
     with c7:
@@ -68,6 +87,7 @@ def tab_ajouter():
     with c9:
         acompte1 = st.number_input("Acompte 1", min_value=0.0, step=50.0)
 
+    # ========== Mode de paiement ==========
     st.markdown("### 🏦 Mode de paiement")
     mode_col, cb1, cb2, cb3, cb4 = st.columns([2, 1, 1, 1, 1])
     with mode_col:
@@ -90,14 +110,16 @@ def tab_ajouter():
         }.items() if v]
     )
 
+    # ========== Escrow ==========
     st.markdown("### 🛡️ Escrow")
     escrow_checked = st.checkbox("Activer Escrow pour ce dossier")
     escrow_value = "Oui" if escrow_checked else "Non"
 
+    # ========== Commentaires ==========
     st.markdown("### 🗒️ Commentaires")
     commentaires = st.text_area("Commentaires", height=100)
 
-    # ===================== SAUVEGARDE =====================
+    # ========== Sauvegarde ==========
     if st.button("💾 Enregistrer le dossier"):
         if not nom.strip():
             st.error("❌ Le nom du client est obligatoire.")
@@ -113,6 +135,7 @@ def tab_ajouter():
             "Date": date_creation.isoformat(),
             "Categories": categorie,
             "Sous-categories": sous_categorie,
+            "Visa": visa,
             "Montant honoraires (US $)": montant_h,
             "Acompte 1": acompte1,
             "Date Acompte 1": date_acompte1.isoformat() if date_acompte1 else "",

@@ -96,7 +96,7 @@ def tab_gestion():
             if save_to_excel(data):
                 st.session_state["data_xlsx"] = data
                 st.success("✅ Modifications enregistrées avec succès.")
-                st.experimental_rerun()
+                st.rerun()
 
     st.markdown("---")
     st.subheader("🗑️ Suppression du dossier")
@@ -112,3 +112,4 @@ def tab_gestion():
             st.session_state["data_xlsx"] = data
             st.warning(f"🗑️ Dossier supprimé : {selected_client}")
             st.experimental_rerun()
+

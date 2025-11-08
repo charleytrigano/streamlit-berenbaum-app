@@ -1,8 +1,7 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
 
-# ===================== UTILITAIRES =====================
+# ===================== FONCTIONS UTILES =====================
 
 def _lower_map(columns):
     return {str(c).strip().lower(): c for c in columns}
@@ -41,23 +40,13 @@ def _norm_cols(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
     CAND = {
-        "Visa": ["Visa", "Type visa", "type visa", "visa"],
-        "Catégorie": [
-            "Catégorie", "Categories", "Categorie", "category", "Category",
-            "Type dossier", "type dossier", "type_dossier", "type de dossier"
-        ],
-        "Sous-catégorie": [
-            "Sous-catégorie", "Sous categorie", "Sous-categorie",
-            "subcategory", "Sous type", "Sous-type", "sous type", "sous-type"
-        ],
-        "Année": ["Année", "Annee", "année", "annee", "Year", "year"],
-        "Mois": ["Mois", "mois", "Month", "month"],
-        "Nom": ["Nom", "Client", "name", "full name", "Full Name"],
-        "_date_probe_": [
-            "Date", "date", "Date création", "date création",
-            "Date d'envoi", "date d'envoi", "Créé le", "créé le",
-            "Created at", "created at", "Created_on", "created_on"
-        ],
+        "Visa": ["Visa", "Type visa", "visa"],
+        "Catégorie": ["Catégorie", "Categories", "Categorie", "category", "Type dossier"],
+        "Sous-catégorie": ["Sous-catégorie", "Sous categorie", "Sous-categorie", "Sous type"],
+        "Année": ["Année", "Annee", "Year"],
+        "Mois": ["Mois", "mois", "Month"],
+        "Nom": ["Nom", "Client", "name"],
+        "_date_probe_": ["Date", "date", "Date d'envoi", "Created at"],
     }
 
     NUMS = [
@@ -79,32 +68,10 @@ def _norm_cols(df: pd.DataFrame) -> pd.DataFrame:
     df["Total payé"] = df[["Acompte 1", "Acompte 2", "Acompte 3", "Acompte 4"]].sum(axis=1)
     df["Solde restant"] = df["Montant facturé"] - df["Total payé"]
 
-    MONTHS_FR = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
-                 "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
-
-    have_year = "Année" in df.columns and df["Année"].notna().any()
-    have_month = "Mois" in df.columns and df["Mois"].notna().any()
-
-    if not have_year or not have_month:
-        probe_src = _best_source(df, CAND["_date_probe_"])
-        if probe_src is not None:
-            parsed = pd.to_datetime(df[probe_src], errors="coerce", dayfirst=True, infer_datetime_format=True)
-            if not have_year:
-                df["Année"] = parsed.dt.year
-            if not have_month:
-                df["Mois"] = parsed.dt.month.map(lambda x: MONTHS_FR[int(x)-1] if pd.notna(x) and 1 <= int(x) <= 12 else "")
-        else:
-            if "Année" not in df.columns:
-                df["Année"] = ""
-            if "Mois" not in df.columns:
-                df["Mois"] = ""
-
     for c in ["Catégorie", "Sous-catégorie", "Visa"]:
         df[c] = df[c].astype(str).str.strip().str.title()
 
     return df
-
-# ===================== DASHBOARD PRINCIPAL =====================
 
 def _opts_from(df, col, all_label="(Tous)"):
     if col not in df.columns:
@@ -112,6 +79,8 @@ def _opts_from(df, col, all_label="(Tous)"):
     vals = df[col].dropna().astype(str).map(lambda x: x.strip()).replace({"None": "", "nan": ""})
     vals = sorted([v for v in vals.unique().tolist() if v])
     return [all_label] + vals if vals else [all_label]
+
+# ===================== TABLEAU DE BORD =====================
 
 def tab_dashboard():
     st.header("📊 Tableau de bord")
@@ -136,77 +105,79 @@ def tab_dashboard():
     st.markdown("### 🎯 Filtres")
     col1, col2, col3, col4, col5 = st.columns(5)
 
-    categorie = col1.selectbox("Catégorie", _opts_from(df, "Catégorie", "(Toutes)"), key="dash_cat")
-    souscat   = col2.selectbox("Sous-catégorie", _opts_from(df, "Sous-catégorie", "(Toutes)"), key="dash_souscat")
-    visa      = col3.selectbox("Visa", _opts_from(df, "Visa", "(Tous)"), key="dash_visa")
-    annee     = col4.selectbox("Année", _opts_from(df, "Année", "(Toutes)"), key="dash_annee")
-    mois      = col5.selectbox("Mois", _opts_from(df, "Mois", "(Tous)"), key="dash_mois")
+    categorie = col1.selectbox("Catégorie", _opts_from(df, "Catégorie", "(Toutes)"))
+    souscat   = col2.selectbox("Sous-catégorie", _opts_from(df, "Sous-catégorie", "(Toutes)"))
+    visa      = col3.selectbox("Visa", _opts_from(df, "Visa", "(Tous)"))
+    annee     = col4.selectbox("Année", _opts_from(df, "Année", "(Toutes)"))
+    mois      = col5.selectbox("Mois", _opts_from(df, "Mois", "(Tous)"))
 
-    # ======= Filtre période comparative =======
-    st.markdown("### ⏳ Comparatif entre périodes")
-    colp1, colp2, colp3, colp4 = st.columns(4)
-    annee_deb = colp1.selectbox("Année début", _opts_from(df, "Année", "(Toutes)"), key="cmp_annee_deb")
-    mois_deb  = colp2.selectbox("Mois début", _opts_from(df, "Mois", "(Tous)"), key="cmp_mois_deb")
-    annee_fin = colp3.selectbox("Année fin", _opts_from(df, "Année", "(Toutes)"), key="cmp_annee_fin")
-    mois_fin  = colp4.selectbox("Mois fin", _opts_from(df, "Mois", "(Tous)"), key="cmp_mois_fin")
-
-    st.markdown("---")
-
-    # ======= Application des filtres =======
-    dff = df.copy()
+    # Application des filtres
     if categorie != "(Toutes)":
-        dff = dff[dff["Catégorie"] == categorie]
+        df = df[df["Catégorie"] == categorie]
     if souscat != "(Toutes)":
-        dff = dff[dff["Sous-catégorie"] == souscat]
+        df = df[df["Sous-catégorie"] == souscat]
     if visa != "(Tous)":
-        dff = dff[dff["Visa"] == visa]
+        df = df[df["Visa"] == visa]
     if annee != "(Toutes)":
-        dff = dff[dff["Année"].astype(str) == str(annee)]
+        df = df[df["Année"].astype(str) == str(annee)]
     if mois != "(Tous)":
-        dff = dff[dff["Mois"].astype(str) == str(mois)]
-
-    # ======= KPI compacts =======
-    st.subheader("📈 Synthèse financière")
-    total_honoraire = dff["Montant honoraires (US $)"].sum()
-    total_autres = dff["Autres frais (US $)"].sum()
-    total_facture = dff["Montant facturé"].sum()
-    total_paye = dff["Total payé"].sum()
-    total_solde = dff["Solde restant"].sum()
-    nb_dossiers = len(dff)
-
-    # KPI compacts : 6 colonnes réduites
-    c0, c1, c2, c3, c4, c5 = st.columns(6)
-    c0.metric("📁", f"{nb_dossiers:,}", "Dossiers")
-    c1.metric("💰", f"{total_honoraire:,.0f}", "Honoraires")
-    c2.metric("💼", f"{total_autres:,.0f}", "Autres frais")
-    c3.metric("🧾", f"{total_facture:,.0f}", "Facturé")
-    c4.metric("💳", f"{total_paye:,.0f}", "Payé")
-    c5.metric("⚖️", f"{total_solde:,.0f}", "Solde")
+        df = df[df["Mois"].astype(str) == str(mois)]
 
     st.markdown("---")
 
-    # ======= Comparatif entre périodes =======
-    if annee_deb != "(Toutes)" and annee_fin != "(Toutes)":
-        df_deb = df[(df["Année"].astype(str) == str(annee_deb)) &
-                    (df["Mois"].astype(str) == str(mois_deb))]
-        df_fin = df[(df["Année"].astype(str) == str(annee_fin)) &
-                    (df["Mois"].astype(str) == str(mois_fin))]
+    # ======= KPI (taille réduite) =======
+    st.subheader("📈 Synthèse financière")
+    total_honoraire = df["Montant honoraires (US $)"].sum()
+    total_autres = df["Autres frais (US $)"].sum()
+    total_facture = df["Montant facturé"].sum()
+    total_paye = df["Total payé"].sum()
+    total_solde = df["Solde restant"].sum()
+    nb_dossiers = len(df)
 
-        if not df_deb.empty and not df_fin.empty:
-            total_deb = df_deb["Montant facturé"].sum()
-            total_fin = df_fin["Montant facturé"].sum()
-            delta = total_fin - total_deb
-            pct = (delta / total_deb * 100) if total_deb else 0
+    kpi_style = """
+    <style>
+    [data-testid="stMetricValue"] { font-size: 18px; }
+    [data-testid="stMetricLabel"] { font-size: 14px; }
+    </style>
+    """
+    st.markdown(kpi_style, unsafe_allow_html=True)
 
-            st.info(f"**Comparatif :** {mois_deb} {annee_deb} → {mois_fin} {annee_fin}")
-            colA, colB, colC = st.columns(3)
-            colA.metric("Début", f"{total_deb:,.0f} $")
-            colB.metric("Fin", f"{total_fin:,.0f} $")
-            colC.metric("Évolution", f"{delta:,.0f} $", f"{pct:+.1f}%")
-        else:
-            st.warning("Sélectionne des périodes contenant des données.")
+    c0, c1, c2, c3, c4, c5 = st.columns(6)
+    c0.metric("📁 Dossiers", f"{nb_dossiers:,}")
+    c1.metric("Honoraires", f"{total_honoraire:,.0f} $")
+    c2.metric("Autres frais", f"{total_autres:,.0f} $")
+    c3.metric("Facturé", f"{total_facture:,.0f} $")
+    c4.metric("Payé", f"{total_paye:,.0f} $")
+    c5.metric("Solde", f"{total_solde:,.0f} $")
+
+    st.markdown("---")
+
+    # ======= Comparatif simple entre deux périodes =======
+    st.markdown("### 🔄 Comparatif entre deux périodes")
+
+    colA, colB, colC, colD = st.columns(4)
+    annee1 = colA.selectbox("Année 1", _opts_from(df, "Année", "(Toutes)"), key="a1")
+    mois1  = colB.selectbox("Mois 1", _opts_from(df, "Mois", "(Tous)"), key="m1")
+    annee2 = colC.selectbox("Année 2", _opts_from(df, "Année", "(Toutes)"), key="a2")
+    mois2  = colD.selectbox("Mois 2", _opts_from(df, "Mois", "(Tous)"), key="m2")
+
+    if annee1 != "(Toutes)" and annee2 != "(Toutes)":
+        d1 = df[(df["Année"].astype(str) == str(annee1)) & (df["Mois"].astype(str) == str(mois1))]
+        d2 = df[(df["Année"].astype(str) == str(annee2)) & (df["Mois"].astype(str) == str(mois2))]
+
+        t1 = d1["Montant facturé"].sum() if not d1.empty else 0
+        t2 = d2["Montant facturé"].sum() if not d2.empty else 0
+        delta = t2 - t1
+        pct = (delta / t1 * 100) if t1 else 0
+
+        data_cmp = pd.DataFrame({
+            "Période": [f"{mois1} {annee1}", f"{mois2} {annee2}", "Évolution"],
+            "Montant facturé ($)": [t1, t2, delta],
+            "Variation (%)": ["", "", f"{pct:+.1f}%"]
+        })
+        st.dataframe(data_cmp, use_container_width=True, height=160)
     else:
-        st.caption("Choisis deux périodes pour afficher le comparatif.")
+        st.caption("Sélectionnez deux périodes pour afficher le comparatif.")
 
     st.markdown("---")
 
@@ -217,21 +188,20 @@ def tab_dashboard():
         "Montant honoraires (US $)", "Autres frais (US $)",
         "Montant facturé", "Total payé", "Solde restant"
     ]
-    cols_exist = [c for c in colonnes_aff if c in dff.columns]
-    df_view = dff[cols_exist].copy()
-    numeric_cols = [c for c in df_view.columns if pd.api.types.is_numeric_dtype(df_view[c])]
+    cols_exist = [c for c in colonnes_aff if c in df.columns]
+    numeric_cols = [c for c in cols_exist if pd.api.types.is_numeric_dtype(df[c])]
     st.dataframe(
-        df_view.style.format(subset=numeric_cols, formatter="{:,.2f}"),
+        df[cols_exist].style.format(subset=numeric_cols, formatter="{:,.2f}"),
         use_container_width=True,
         height=400,
     )
 
     # ======= Top 10 =======
     st.subheader("🏆 Top 10 des dossiers (par montant facturé)")
-    if "Montant facturé" in dff.columns:
-        top10 = dff.nlargest(10, "Montant facturé")[["Nom", "Visa", "Montant facturé", "Total payé", "Solde restant"]]
+    if "Montant facturé" in df.columns:
+        top10 = df.nlargest(10, "Montant facturé")[["Nom", "Visa", "Montant facturé", "Total payé", "Solde restant"]]
         st.dataframe(
             top10.style.format(subset=["Montant facturé", "Total payé", "Solde restant"], formatter="{:,.2f}"),
             use_container_width=True,
-            height=320,
+            height=300,
         )

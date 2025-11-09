@@ -1,162 +1,174 @@
 import streamlit as st
 import pandas as pd
 from datetime import date
-from utils_dropbox import save_xlsx_to_dropbox, save_xlsx_local
+from utils_dropbox import save_xlsx_local, save_xlsx_to_dropbox
+
 
 def tab_gestion():
-    """Onglet : Gestion des dossiers existants"""
-    st.header("📁 Gestion des dossiers clients")
+    """Onglet de gestion des dossiers clients."""
+    st.header("📁 Gestion des dossiers")
 
-    # --- Réinitialisation propre du dossier sélectionné ---
-    if st.session_state.get("reset_gestion"):
-        st.session_state.pop("gestion_sel_dossier", None)
-        st.session_state.pop("reset_gestion", None)
-        st.rerun()
-
-    # Vérification que le fichier Excel est chargé
+    # Vérifier si les données Excel sont chargées
     if "data_xlsx" not in st.session_state or not st.session_state["data_xlsx"]:
-        st.warning("⚠️ Chargez d’abord le fichier Excel via l’onglet 📄 Fichiers.")
+        st.warning("⚠️ Aucune donnée disponible. Chargez d'abord le fichier Excel via l'onglet '📄 Fichiers'.")
         return
 
     data = st.session_state["data_xlsx"]
     if "Clients" not in data:
-        st.error("❌ L’onglet 'Clients' est absent du fichier.")
+        st.error("❌ Feuille 'Clients' manquante dans le fichier Excel.")
         return
 
-    df = data["Clients"]
+    df_clients = data["Clients"]
+    if df_clients.empty:
+        st.warning("📄 Aucune donnée client trouvée.")
+        return
 
-    st.markdown("### 🔍 Sélection d’un dossier")
-    c1, c2 = st.columns(2)
-    all_dossiers = sorted(df["Dossier N"].dropna().astype(str).unique())
-    all_noms = sorted(df["Nom"].dropna().astype(str).unique())
+    # --- Sélection du dossier ---
+    st.subheader("🔎 Sélection du dossier")
 
-    sel_dossier = c1.selectbox("📄 Dossier N°", [""] + all_dossiers, key="gestion_sel_dossier")
-    sel_nom = c2.selectbox("👤 Nom du client", [""] + all_noms, key="gestion_sel_nom")
+    col1, col2 = st.columns(2)
+    dossiers = sorted(df_clients["Dossier N"].dropna().astype(str).unique().tolist())
+    noms = sorted(df_clients["Nom"].dropna().astype(str).unique().tolist())
 
-    if sel_nom and not sel_dossier:
-        row = df[df["Nom"] == sel_nom]
-    elif sel_dossier:
-        row = df[df["Dossier N"] == sel_dossier]
+    dossier_sel = col1.selectbox("Dossier N", [""] + dossiers, key="gestion_sel_dossier")
+    nom_sel = col2.selectbox("Nom du client", [""] + noms, key="gestion_sel_nom")
+
+    # Synchronisation Dossier <-> Nom
+    if dossier_sel:
+        selected_row = df_clients[df_clients["Dossier N"].astype(str) == dossier_sel]
+    elif nom_sel:
+        selected_row = df_clients[df_clients["Nom"].astype(str) == nom_sel]
     else:
-        row = pd.DataFrame()
+        selected_row = pd.DataFrame()
 
-    if row.empty:
-        st.info("Sélectionnez un dossier ou un nom pour afficher ses informations.")
+    if selected_row.empty:
+        st.info("👉 Sélectionnez un dossier pour afficher ses informations.")
         return
 
-    dossier_data = row.iloc[0].to_dict()
+    dossier_data = selected_row.iloc[0].to_dict()
 
-    st.markdown("### 🧾 Informations du dossier")
+    st.divider()
+    st.subheader("🧾 Détails du dossier")
 
-    # --- Ligne 1 ---
+    # --- Ligne 1 : Dossier / Nom / Date création ---
     c1, c2, c3 = st.columns(3)
-    dossier_num = c1.text_input("Dossier N°", value=dossier_data.get("Dossier N", ""))
-    nom_client = c2.text_input("Nom du client", value=dossier_data.get("Nom", ""))
+    dossier_num = c1.text_input("Dossier N", dossier_data.get("Dossier N", ""))
+    nom_client = c2.text_input("Nom du client", dossier_data.get("Nom", ""))
     date_creation = c3.date_input(
         "Date (création)",
-        value=pd.to_datetime(dossier_data.get("Date création", date.today()), errors="coerce").date() if dossier_data.get("Date création") else date.today(),
+        value=pd.to_datetime(dossier_data.get("Date", date.today()), errors="coerce").date() if pd.notna(dossier_data.get("Date", None)) else date.today(),
         key="gestion_date_creation"
     )
 
-    # --- Ligne 2 ---
-    st.markdown("### 📂 Classification")
+    # --- Ligne 2 : Catégorie / Sous-catégorie / Visa ---
+    c4, c5, c6 = st.columns(3)
     visa_sheet = data.get("Visa", pd.DataFrame())
+    categories = sorted(visa_sheet["Catégories"].dropna().unique().tolist()) if "Catégories" in visa_sheet else []
+    cat_sel = c4.selectbox("Catégorie", [""] + categories, index=([""] + categories).index(dossier_data.get("Catégories", "")) if dossier_data.get("Catégories", "") in categories else 0)
 
-    cats = []
-    souscats = []
-    visas = []
+    sous_categories = []
+    if not visa_sheet.empty and "Sous-catégories" in visa_sheet.columns:
+        sous_categories = sorted(
+            visa_sheet.loc[visa_sheet["Catégories"] == cat_sel, "Sous-catégories"].dropna().unique().tolist()
+        )
+    sous_cat_sel = c5.selectbox("Sous-catégorie", [""] + sous_categories, index=([""] + sous_categories).index(dossier_data.get("Sous-catégories", "")) if dossier_data.get("Sous-catégories", "") in sous_categories else 0)
 
-    if not visa_sheet.empty:
-        cats = sorted(visa_sheet["Catégories"].dropna().astype(str).unique().tolist())
-        souscats = sorted(visa_sheet["Sous-catégories"].dropna().astype(str).unique().tolist())
-        visas = sorted(visa_sheet.columns[visa_sheet.iloc[0] == 1].tolist())
+    visa_list = sorted(visa_sheet.columns[2:].tolist()) if not visa_sheet.empty else []
+    visa_sel = c6.selectbox("Visa", [""] + visa_list, index=([""] + visa_list).index(dossier_data.get("Visa", "")) if dossier_data.get("Visa", "") in visa_list else 0)
 
-    c1, c2, c3 = st.columns(3)
-    cat_sel = c1.selectbox("Catégorie", [""] + cats, index=([""] + cats).index(dossier_data.get("Catégories", "")) if dossier_data.get("Catégories", "") in cats else 0)
-    souscat_sel = c2.selectbox("Sous-catégorie", [""] + souscats, index=([""] + souscats).index(dossier_data.get("Sous-catégories", "")) if dossier_data.get("Sous-catégories", "") in souscats else 0)
-    visa_sel = c3.selectbox("Visa", [""] + visas, index=([""] + visas).index(dossier_data.get("Visa", "")) if dossier_data.get("Visa", "") in visas else 0)
+    # --- Ligne 3 : Montants / Acompte 1 ---
+    c7, c8, c9 = st.columns(3)
+    honoraires = c7.number_input("Montant honoraires (US $)", value=float(dossier_data.get("Montant honoraires (US $)", 0)) if pd.notna(dossier_data.get("Montant honoraires (US $)", None)) else 0.0)
+    date_acompte1 = c8.date_input("Date Acompte 1", value=pd.to_datetime(dossier_data.get("Date Acompte 1", date.today()), errors="coerce").date() if pd.notna(dossier_data.get("Date Acompte 1", None)) else date.today())
+    acompte1 = c9.number_input("Acompte 1 (US $)", value=float(dossier_data.get("Acompte 1", 0)) if pd.notna(dossier_data.get("Acompte 1", None)) else 0.0)
 
-    # --- Ligne 3 ---
-    st.markdown("### 💵 Paiement principal")
-    c1, c2, c3 = st.columns(3)
-    honoraires = c1.number_input("Montant honoraires (US $)", value=float(dossier_data.get("Montant honoraires (US $)", 0)), min_value=0.0, step=100.0)
-    date_acompte1 = c2.date_input("Date Acompte 1", value=pd.to_datetime(dossier_data.get("Date Acompte 1", date.today()), errors='coerce').date() if dossier_data.get("Date Acompte 1") else date.today())
-    acompte1 = c3.number_input("Acompte 1", value=float(dossier_data.get("Acompte 1", 0)), min_value=0.0, step=100.0)
+    # --- Ligne 4 : Mode de paiement ---
+    st.markdown("💳 **Mode de paiement**")
+    c10, c11, c12, c13 = st.columns(4)
+    mode_cheque = c10.checkbox("Chèque", value=dossier_data.get("Mode paiement", "") == "Chèque")
+    mode_virement = c11.checkbox("Virement", value=dossier_data.get("Mode paiement", "") == "Virement")
+    mode_cb = c12.checkbox("Carte bancaire", value=dossier_data.get("Mode paiement", "") == "Carte bancaire")
+    mode_venmo = c13.checkbox("Venmo", value=dossier_data.get("Mode paiement", "") == "Venmo")
 
-    # --- Ligne 4 ---
-    st.markdown("### 🏦 Mode de paiement")
-    c1, c2, c3, c4 = st.columns(4)
-    mode_paiement = {
-        "Chèque": c1.checkbox("Chèque", value=bool(dossier_data.get("Chèque", False))),
-        "Virement": c2.checkbox("Virement", value=bool(dossier_data.get("Virement", False))),
-        "Carte": c3.checkbox("Carte bancaire", value=bool(dossier_data.get("Carte bancaire", False))),
-        "Venmo": c4.checkbox("Venmo", value=bool(dossier_data.get("Venmo", False))),
-    }
+    if mode_cheque:
+        mode_paiement = "Chèque"
+    elif mode_virement:
+        mode_paiement = "Virement"
+    elif mode_cb:
+        mode_paiement = "Carte bancaire"
+    elif mode_venmo:
+        mode_paiement = "Venmo"
+    else:
+        mode_paiement = ""
 
-    # --- Ligne 5 ---
-    escrow = st.checkbox("💰 Escrow", value=bool(dossier_data.get("Escrow", False)))
+    # --- Ligne 5 : Escrow ---
+    escrow_auto = acompte1 > 0 and honoraires == 0
+    escrow = st.checkbox("Mettre en Escrow", value=dossier_data.get("Escrow", escrow_auto))
 
-    # --- Statut du dossier ---
-    st.markdown("### 📌 Statut du dossier")
-    c1, c2, c3 = st.columns(3)
-    accepte = c1.checkbox("Dossier accepté", value=bool(dossier_data.get("Dossier accepté", False)))
-    date_acc = c1.date_input("Date", value=pd.to_datetime(dossier_data.get("Date accepté", date.today()), errors='coerce').date() if dossier_data.get("Date accepté") else date.today())
+    # --- Ligne 6 : Statut du dossier ---
+    st.subheader("📂 Statut du dossier")
+    c14, c15 = st.columns([1, 3])
+    col_a, col_b, col_c = st.columns(3)
+    acc = col_a.checkbox("✅ Dossier accepté", value=bool(dossier_data.get("Accepté", False)))
+    date_acc = col_a.date_input("Date", value=pd.to_datetime(dossier_data.get("Date accepté", date.today()), errors="coerce").date() if pd.notna(dossier_data.get("Date accepté", None)) else date.today())
+    ref = col_b.checkbox("❌ Dossier refusé", value=bool(dossier_data.get("Refusé", False)))
+    date_ref = col_b.date_input("Date ", value=pd.to_datetime(dossier_data.get("Date refusé", date.today()), errors="coerce").date() if pd.notna(dossier_data.get("Date refusé", None)) else date.today())
+    ann = col_c.checkbox("⚠️ Dossier annulé", value=bool(dossier_data.get("Annulé", False)))
+    date_ann = col_c.date_input("Date  ", value=pd.to_datetime(dossier_data.get("Date annulé", date.today()), errors="coerce").date() if pd.notna(dossier_data.get("Date annulé", None)) else date.today())
+    rfe = st.checkbox("📄 RFE (Requête complémentaire)", value=bool(dossier_data.get("RFE", False)))
 
-    refuse = c2.checkbox("Dossier refusé", value=bool(dossier_data.get("Dossier refusé", False)))
-    date_ref = c2.date_input("Date", value=pd.to_datetime(dossier_data.get("Date refusé", date.today()), errors='coerce').date() if dossier_data.get("Date refusé") else date.today())
+    # --- Ligne 7 : Commentaires ---
+    commentaires = st.text_area("🗒️ Commentaires", value=dossier_data.get("Commentaires", ""))
 
-    annule = c3.checkbox("Dossier annulé", value=bool(dossier_data.get("Dossier annulé", False)))
-    date_ann = c3.date_input("Date", value=pd.to_datetime(dossier_data.get("Date annulé", date.today()), errors='coerce').date() if dossier_data.get("Date annulé") else date.today())
+    st.divider()
 
-    st.markdown("### ⚠️ Autres statuts")
-    c1, c2 = st.columns(2)
-    rfe = c1.checkbox("RFE", value=bool(dossier_data.get("RFE", False)))
-    envoi = c2.checkbox("📤 Dossier envoyé", value=bool(dossier_data.get("Dossier envoyé", False)))
-    date_envoi = c2.date_input("Date d’envoi", value=pd.to_datetime(dossier_data.get("Date envoi", date.today()), errors='coerce').date() if dossier_data.get("Date envoi") else date.today())
+    if st.button("💾 Enregistrer les modifications", use_container_width=True):
+        try:
+            # Mise à jour du dataframe
+            idx = df_clients.index[(df_clients["Dossier N"].astype(str) == str(dossier_num)) | (df_clients["Nom"].astype(str) == str(nom_client))]
+            if not idx.empty:
+                i = idx[0]
+                df_clients.at[i, "Dossier N"] = dossier_num
+                df_clients.at[i, "Nom"] = nom_client
+                df_clients.at[i, "Date"] = date_creation
+                df_clients.at[i, "Catégories"] = cat_sel
+                df_clients.at[i, "Sous-catégories"] = sous_cat_sel
+                df_clients.at[i, "Visa"] = visa_sel
+                df_clients.at[i, "Montant honoraires (US $)"] = honoraires
+                df_clients.at[i, "Acompte 1"] = acompte1
+                df_clients.at[i, "Date Acompte 1"] = date_acompte1
+                df_clients.at[i, "Mode paiement"] = mode_paiement
+                df_clients.at[i, "Escrow"] = escrow
+                df_clients.at[i, "Accepté"] = acc
+                df_clients.at[i, "Date accepté"] = date_acc
+                df_clients.at[i, "Refusé"] = ref
+                df_clients.at[i, "Date refusé"] = date_ref
+                df_clients.at[i, "Annulé"] = ann
+                df_clients.at[i, "Date annulé"] = date_ann
+                df_clients.at[i, "RFE"] = rfe
+                df_clients.at[i, "Commentaires"] = commentaires
 
-    # --- Ligne 6 ---
-    commentaires = st.text_area("📝 Commentaires", value=dossier_data.get("Commentaires", ""), height=100)
+            # --- Gestion de la feuille Escrow ---
+            if escrow or (acompte1 > 0 and honoraires == 0):
+                escrow_df = data.get("Escrow", pd.DataFrame(columns=["Dossier N", "Nom", "Montant", "Date envoi", "État", "Date réclamation"]))
+                new_row = {
+                    "Dossier N": dossier_num,
+                    "Nom": nom_client,
+                    "Montant": acompte1,
+                    "Date envoi": date.today(),
+                    "État": "En attente",
+                    "Date réclamation": ""
+                }
+                escrow_df = pd.concat([escrow_df[escrow_df["Dossier N"] != dossier_num], pd.DataFrame([new_row])], ignore_index=True)
+                data["Escrow"] = escrow_df
 
-    # --- Bouton de sauvegarde ---
-    if st.button("💾 Enregistrer les modifications"):
-        idx = df[df["Dossier N"] == dossier_num].index
-        if not idx.empty:
-            i = idx[0]
-            df.at[i, "Nom"] = nom_client
-            df.at[i, "Date création"] = date_creation
-            df.at[i, "Catégories"] = cat_sel
-            df.at[i, "Sous-catégories"] = souscat_sel
-            df.at[i, "Visa"] = visa_sel
-            df.at[i, "Montant honoraires (US $)"] = honoraires
-            df.at[i, "Date Acompte 1"] = date_acompte1
-            df.at[i, "Acompte 1"] = acompte1
-            df.at[i, "Escrow"] = escrow
-            df.at[i, "Commentaires"] = commentaires
-            df.at[i, "Dossier accepté"] = accepte
-            df.at[i, "Dossier refusé"] = refuse
-            df.at[i, "Dossier annulé"] = annule
-            df.at[i, "Date accepté"] = date_acc
-            df.at[i, "Date refusé"] = date_ref
-            df.at[i, "Date annulé"] = date_ann
-            df.at[i, "RFE"] = rfe
-            df.at[i, "Dossier envoyé"] = envoi
-            df.at[i, "Date envoi"] = date_envoi
-            for m, v in mode_paiement.items():
-                df.at[i, m] = v
+            # Sauvegarde
+            data["Clients"] = df_clients
+            save_xlsx_local(data)
+            save_xlsx_to_dropbox(data)
 
-            # 🔁 Escrow automatique
-            if acompte1 > 0 and honoraires == 0:
-                df.at[i, "Escrow"] = True
+            st.success("✅ Dossier mis à jour avec succès !")
+            st.rerun()
 
-            st.session_state["data_xlsx"]["Clients"] = df
-            save_xlsx_local(st.session_state["data_xlsx"])
-            save_xlsx_to_dropbox(st.session_state["data_xlsx"])
-            st.success("✅ Dossier mis à jour et sauvegardé.")
-
-            # ✅ Réinitialisation propre
-            st.session_state["reset_gestion"] = True
-            st.stop()
-
-
-
-
+        except Exception as e:
+            st.error(f"❌ Erreur lors de la sauvegarde : {e}")

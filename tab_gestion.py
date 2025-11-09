@@ -151,39 +151,22 @@ def tab_gestion():
         df_visa = df_visa.dropna(how="all")
 
     cats = sorted(df_visa["Catégorie"].dropna().unique().tolist()) if "Catégorie" in df_visa else []
-    cat_sel = c1.selectbox(
-        "Catégorie",
-        [""] + cats,
-        index=([""] + cats).index(dossier_data.get("Catégories", "")) if dossier_data.get("Catégories", "") in cats else 0,
-        key="gestion_cat"
-    )
+    cat_sel = c1.selectbox("Catégorie", [""] + cats, index=([""] + cats).index(dossier_data.get("Catégories", "")) if dossier_data.get("Catégories", "") in cats else 0, key="gestion_cat")
 
     souscats = []
     if cat_sel and "Sous-catégorie" in df_visa:
         souscats = df_visa.loc[df_visa["Catégorie"] == cat_sel, "Sous-catégorie"].dropna().unique().tolist()
-    sous_sel = c2.selectbox(
-        "Sous-catégorie",
-        [""] + sorted(souscats),
-        index=([""] + sorted(souscats)).index(dossier_data.get("Sous-catégories", "")) if dossier_data.get("Sous-catégories", "") in souscats else 0,
-        key="gestion_souscat"
-    )
+    sous_sel = c2.selectbox("Sous-catégorie", [""] + sorted(souscats), index=([""] + sorted(souscats)).index(dossier_data.get("Sous-catégories", "")) if dossier_data.get("Sous-catégories", "") in souscats else 0, key="gestion_souscat")
 
     visas = sorted(df_visa.columns[3:].tolist()) if not df_visa.empty else []
-    visa_sel = c3.selectbox(
-        "Visa",
-        [""] + visas,
-        index=([""] + visas).index(dossier_data.get("Visa", "")) if dossier_data.get("Visa", "") in visas else 0,
-        key="gestion_visa"
-    )
+    visa_sel = c3.selectbox("Visa", [""] + visas, index=([""] + visas).index(dossier_data.get("Visa", "")) if dossier_data.get("Visa", "") in visas else 0, key="gestion_visa")
 
     # ---------------- Montants et acomptes ----------------
     st.subheader("💵 Informations financières")
     c1, c2, c3 = st.columns(3)
-    honoraires = c1.number_input("Montant honoraires (US $)", min_value=0.0, step=100.0, format="%.2f",
-                                 value=float(_to_float(dossier_data.get("Montant honoraires (US $)", 0.0))), key="gestion_honoraires")
+    honoraires = c1.number_input("Montant honoraires (US $)", min_value=0.0, step=100.0, format="%.2f", value=float(_to_float(dossier_data.get("Montant honoraires (US $)", 0.0))), key="gestion_honoraires")
     date_a1 = c2.date_input("Date Acompte 1", value=_safe_to_date(dossier_data.get("Date Acompte 1", date.today())), key="gestion_date_a1")
-    acompte1 = c3.number_input("Acompte 1 (US $)", min_value=0.0, step=100.0, format="%.2f",
-                               value=float(_to_float(dossier_data.get("Acompte 1", 0.0))), key="gestion_acompte1")
+    acompte1 = c3.number_input("Acompte 1 (US $)", min_value=0.0, step=100.0, format="%.2f", value=float(_to_float(dossier_data.get("Acompte 1", 0.0))), key="gestion_acompte1")
 
     st.subheader("💳 Mode de paiement Acompte 1")
     m1, m2, m3, m4 = st.columns(4)
@@ -199,33 +182,36 @@ def tab_gestion():
 
     # ---------------- Statut du dossier ----------------
     st.subheader("📌 Statut du dossier")
-    c1, c2 = st.columns(2)
+
+    c1, c2 = st.columns([1, 1])
     accepte = c1.checkbox("✅ Dossier accepté", value=(str(dossier_data.get("Dossier accepté", "")).lower() == "oui"), key="gestion_accepte")
     date_acc = c2.date_input("Date acceptation", value=_safe_to_date(dossier_data.get("Date acceptation", date.today())), key="gestion_date_acc")
 
-    c3, c4 = st.columns(2)
+    c3, c4 = st.columns([1, 1])
     refuse = c3.checkbox("❌ Dossier refusé", value=(str(dossier_data.get("Dossier refusé", "")).lower() == "oui"), key="gestion_refuse")
     date_ref = c4.date_input("Date refus", value=_safe_to_date(dossier_data.get("Date refus", date.today())), key="gestion_date_ref")
 
-    c5, c6 = st.columns(2)
+    c5, c6 = st.columns([1, 1])
     annule = c5.checkbox("🚫 Dossier annulé", value=(str(dossier_data.get("Dossier annulé", "")).lower() == "oui"), key="gestion_annule")
     date_ann = c6.date_input("Date annulation", value=_safe_to_date(dossier_data.get("Date annulation", date.today())), key="gestion_date_ann")
 
     rfe = st.checkbox("⚠️ RFE (Request For Evidence)", value=(str(dossier_data.get("RFE", "")).lower() == "oui"), key="gestion_rfe")
 
-    # Validation logique RFE
     if (accepte or refuse or annule) and not rfe:
         st.error("⚠️ Vous devez cocher la case 'RFE' si le dossier est accepté, refusé ou annulé.")
         return
 
-    # ---------------- Escrow & envoi ----------------
+    # ---------------- Envoi du dossier ----------------
+    st.subheader("📤 Envoi du dossier")
+    c7, c8 = st.columns([1, 1])
+    envoye = c7.checkbox("📨 Dossier envoyé", value=(str(dossier_data.get("Dossier envoyé", "")).lower() == "oui"), key="gestion_envoye")
+    date_env = c8.date_input("Date envoi", value=_safe_to_date(dossier_data.get("Date envoi", date.today())), key="gestion_date_env")
+
+    # ---------------- Escrow ----------------
     st.subheader("🛡️ Escrow")
     escrow_box = st.checkbox("Envoyé en Escrow", value=(str(dossier_data.get("Escrow", "")).lower() == "oui"), key="gestion_escrow")
-    st.subheader("📤 Envoi du dossier")
-    c1, c2 = st.columns(2)
-    envoye = c1.checkbox("Dossier envoyé", value=(str(dossier_data.get("Dossier envoyé", "")).lower() == "oui"), key="gestion_envoye")
-    date_env = c2.date_input("Date envoi", value=_safe_to_date(dossier_data.get("Date envoi", date.today())), key="gestion_date_env")
 
+    # ---------------- Commentaires ----------------
     st.subheader("📝 Commentaires")
     comment = st.text_area("Commentaires", value=dossier_data.get("Commentaires", ""), key="gestion_comment")
     st.markdown("---")

@@ -118,7 +118,8 @@ def tab_gestion():
     nom_client = c2.text_input("Nom du client", dossier_data.get("Nom", ""))
     date_creation = c3.date_input(
         "Date (création)",
-        value=_safe_to_date(dossier_data.get("Date création", date.today()))
+        value=_safe_to_date(dossier_data.get("Date création", date.today())),
+        key="gestion_date_creation"
     )
 
     # ---------------- Catégories et visa ----------------
@@ -137,7 +138,7 @@ def tab_gestion():
     c1, c2, c3 = st.columns(3)
     honoraires = c1.number_input("Montant honoraires (US $)", min_value=0.0, step=100.0, format="%.2f",
                                  value=float(_to_float(dossier_data.get("Montant honoraires (US $)", 0.0))))
-    date_a1 = c2.date_input("Date Acompte 1", value=_safe_to_date(dossier_data.get("Date Acompte 1", date.today())))
+    date_a1 = c2.date_input("Date Acompte 1", value=_safe_to_date(dossier_data.get("Date Acompte 1", date.today())), key="gestion_date_a1")
     acompte1 = c3.number_input("Acompte 1 (US $)", min_value=0.0, step=100.0, format="%.2f",
                                value=float(_to_float(dossier_data.get("Acompte 1", 0.0))))
 
@@ -159,7 +160,7 @@ def tab_gestion():
     st.subheader("📤 Envoi du dossier")
     c1, c2 = st.columns(2)
     envoye = c1.checkbox("Dossier envoyé", value=(str(dossier_data.get("Dossier envoyé", "")).lower() == "oui"))
-    date_env = c2.date_input("Date envoi", value=_safe_to_date(dossier_data.get("Date envoi", date.today())))
+    date_env = c2.date_input("Date envoi", value=_safe_to_date(dossier_data.get("Date envoi", date.today())), key="gestion_date_env")
 
     st.subheader("📝 Commentaires")
     comment = st.text_area("Commentaires", value=dossier_data.get("Commentaires", ""))

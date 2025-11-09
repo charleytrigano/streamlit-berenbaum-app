@@ -94,11 +94,10 @@ def tab_gestion():
         st.warning("📄 Aucun dossier client.")
         return
 
-    # ---------------- Vérification automatique des dossiers Escrow ----------------
+    # ---------------- Vérification automatique Escrow ----------------
     st.markdown("### 🔍 Vérification automatique des dossiers à placer en Escrow")
     escrow_key = _ensure_escrow_sheet(data)
     auto_escrow_count = 0
-
     for _, row in df.iterrows():
         acompte = _to_float(row.get("Acompte 1", 0))
         honor = _to_float(row.get("Montant honoraires (US $)", 0))
@@ -108,9 +107,8 @@ def tab_gestion():
             if dossier_n and nom:
                 _upsert_escrow_row(data, escrow_key, dossier_n, nom, acompte, "En attente")
                 auto_escrow_count += 1
-
     if auto_escrow_count > 0:
-        st.info(f"✅ {auto_escrow_count} dossiers ont été automatiquement ajoutés à Escrow.")
+        st.info(f"✅ {auto_escrow_count} dossiers ajoutés automatiquement à Escrow.")
         st.session_state["data_xlsx"]["Escrow"] = data[escrow_key]
 
     # ---------------- Sélection dossier ----------------
@@ -135,16 +133,11 @@ def tab_gestion():
     c1, c2, c3 = st.columns(3)
     dossier_n = c1.text_input("Dossier N", dossier_data.get("Dossier N", ""), key="gestion_dossier")
     nom_client = c2.text_input("Nom du client", dossier_data.get("Nom", ""), key="gestion_nom")
-    date_creation = c3.date_input(
-        "Date (création)",
-        value=_safe_to_date(dossier_data.get("Date création", date.today())),
-        key="gestion_date_creation"
-    )
+    date_creation = c3.date_input("Date (création)", value=_safe_to_date(dossier_data.get("Date création", date.today())), key="gestion_date_creation")
 
     # ---------------- Catégories et visa ----------------
     st.subheader("📂 Classification et visa")
     c1, c2, c3 = st.columns(3)
-
     df_visa = data.get("Visa", pd.DataFrame())
     if not df_visa.empty:
         df_visa.columns = df_visa.columns.map(str)
@@ -176,27 +169,20 @@ def tab_gestion():
     mode2 = m2.checkbox("Virement", value=("Virement" in defaults), key="gestion_mode2")
     mode3 = m3.checkbox("Carte bancaire", value=("Carte bancaire" in defaults), key="gestion_mode3")
     mode4 = m4.checkbox("Venmo", value=("Venmo" in defaults), key="gestion_mode4")
-    mode_paiement_1 = ", ".join([label for label, flag in [
-        ("Chèque", mode1), ("Virement", mode2), ("Carte bancaire", mode3), ("Venmo", mode4)
-    ] if flag])
+    mode_paiement_1 = ", ".join([label for label, flag in [("Chèque", mode1), ("Virement", mode2), ("Carte bancaire", mode3), ("Venmo", mode4)] if flag])
 
     # ---------------- Statut du dossier ----------------
     st.subheader("📌 Statut du dossier")
-
     c1, c2 = st.columns([1, 1])
     accepte = c1.checkbox("✅ Dossier accepté", value=(str(dossier_data.get("Dossier accepté", "")).lower() == "oui"), key="gestion_accepte")
     date_acc = c2.date_input("Date acceptation", value=_safe_to_date(dossier_data.get("Date acceptation", date.today())), key="gestion_date_acc")
-
     c3, c4 = st.columns([1, 1])
     refuse = c3.checkbox("❌ Dossier refusé", value=(str(dossier_data.get("Dossier refusé", "")).lower() == "oui"), key="gestion_refuse")
     date_ref = c4.date_input("Date refus", value=_safe_to_date(dossier_data.get("Date refus", date.today())), key="gestion_date_ref")
-
     c5, c6 = st.columns([1, 1])
     annule = c5.checkbox("🚫 Dossier annulé", value=(str(dossier_data.get("Dossier annulé", "")).lower() == "oui"), key="gestion_annule")
     date_ann = c6.date_input("Date annulation", value=_safe_to_date(dossier_data.get("Date annulation", date.today())), key="gestion_date_ann")
-
     rfe = st.checkbox("⚠️ RFE (Request For Evidence)", value=(str(dossier_data.get("RFE", "")).lower() == "oui"), key="gestion_rfe")
-
     if (accepte or refuse or annule) and not rfe:
         st.error("⚠️ Vous devez cocher la case 'RFE' si le dossier est accepté, refusé ou annulé.")
         return
@@ -223,8 +209,6 @@ def tab_gestion():
             st.error("❌ Dossier introuvable.")
             return
         i = idx[0]
-
-        # Met à jour le dossier
         df.loc[i, "Nom"] = nom_client
         df.loc[i, "Date création"] = date_creation.strftime("%Y-%m-%d")
         df.loc[i, "Catégories"] = cat_sel
@@ -245,22 +229,18 @@ def tab_gestion():
         df.loc[i, "Date envoi"] = date_env.strftime("%Y-%m-%d")
         df.loc[i, "Commentaires"] = comment
 
-        # Escrow automatique ou manuel
         auto_escrow = acompte1 > 0 and honoraires == 0
         escrow_final = escrow_box or auto_escrow
         df.loc[i, "Escrow"] = "Oui" if escrow_final else "Non"
-
         escrow_key = _ensure_escrow_sheet(data)
         if escrow_final:
             etat = "À réclamer" if envoye else "En attente"
             date_env_str = df.loc[i, "Date envoi"] if envoye else ""
             _upsert_escrow_row(data, escrow_key, dossier_n, nom_client, acompte1, etat, date_env_str)
-            st.session_state["data_xlsx"][escrow_key] = data[escrow_key]
         else:
             _remove_escrow_row(data, escrow_key, dossier_n)
-            st.session_state["data_xlsx"][escrow_key] = data[escrow_key]
-
         st.session_state["data_xlsx"]["Clients"] = df
+        st.session_state["data_xlsx"]["Escrow"] = data[escrow_key]
 
         # Sauvegarde Dropbox
         try:
@@ -278,6 +258,9 @@ def tab_gestion():
         except Exception as e:
             st.error(f"❌ Erreur Dropbox : {e}")
 
-        st.session_state["data_xlsx"]["Escrow"] = data[escrow_key]
         st.success(f"✅ Dossier mis à jour{' et envoyé en Escrow' if escrow_final else ''}.")
-        st.rerun()
+
+        # ✅ Réinitialisation après sauvegarde
+        st.session_state["gestion_sel_dossier"] = ""
+        st.session_state["gestion_sel_nom"] = ""
+        st.experimental_rerun()

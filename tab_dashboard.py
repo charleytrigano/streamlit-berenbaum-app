@@ -30,26 +30,21 @@ def tab_dashboard():
         except:
             return 0.0
 
-    if "Montant honoraires (US $)" in df.columns:
-        df["Montant honoraires (US $)"] = df["Montant honoraires (US $)"].map(_to_float)
-    else:
-        df["Montant honoraires (US $)"] = 0.0
-
-    if "Autres frais (US $)" in df.columns:
-        df["Autres frais (US $)"] = df["Autres frais (US $)"].map(_to_float)
-    else:
-        df["Autres frais (US $)"] = 0.0
+    for col in ["Montant honoraires (US $)", "Autres frais (US $)"]:
+        if col in df.columns:
+            df[col] = df[col].map(_to_float)
+        else:
+            df[col] = 0.0
 
     df["Montant facturé"] = df["Montant honoraires (US $)"] + df["Autres frais (US $)"]
 
     acompte_cols = [c for c in df.columns if c.lower().startswith("acompte")]
     for c in acompte_cols:
         df[c] = df[c].map(_to_float)
-
     df["Total payé"] = df[acompte_cols].sum(axis=1)
     df["Solde restant"] = df["Montant facturé"] - df["Total payé"]
 
-    # === Formatage monétaire ===
+    # === Format monétaire ===
     def _fmt_money(v):
         try:
             return f"{v:,.2f}".replace(",", " ").replace(".", ",") + " $"
@@ -82,16 +77,20 @@ def tab_dashboard():
 
     st.markdown("---")
 
-    # === Tableau récapitulatif ===
-    st.subheader("📋 Détails des dossiers clients")
-    df_display = df[[
+    # === Colonnes à afficher (on garde seulement celles qui existent)
+    desired_cols = [
         "Dossier N", "Nom", "Catégories", "Sous-catégories", "Visa",
         "Montant honoraires (US $)", "Autres frais (US $)",
         "Montant facturé", "Total payé", "Solde restant"
-    ]].copy()
+    ]
+    existing_cols = [col for col in desired_cols if col in df.columns]
+
+    st.subheader("📋 Détails des dossiers clients")
+    df_display = df[existing_cols].copy()
 
     # Application du format monétaire
     for col in ["Montant honoraires (US $)", "Autres frais (US $)", "Montant facturé", "Total payé", "Solde restant"]:
-        df_display[col] = df_display[col].map(_fmt_money)
+        if col in df_display.columns:
+            df_display[col] = df_display[col].map(_fmt_money)
 
     st.dataframe(df_display, use_container_width=True, height=400)

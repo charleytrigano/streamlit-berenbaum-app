@@ -2,18 +2,14 @@ import streamlit as st
 import pandas as pd
 
 def tab_analyses():
-    """Onglet Analyses : comparaison par périodes et filtres multi-critères."""
-
+    """Onglet Analyses : filtres + comparatif multi-années (jusqu'à 5) + liste dossiers."""
     st.header("📊 Analyses comparatives")
 
-    # Vérifie si les données Excel sont chargées
+    # --- Vérif data ---
     if "data_xlsx" not in st.session_state or not st.session_state["data_xlsx"]:
         st.warning("⚠️ Aucune donnée disponible. Chargez d'abord le fichier Excel via l'onglet 📄 Fichiers.")
         return
-
     data = st.session_state["data_xlsx"]
-
-    # Vérifie la présence de la feuille Clients
     if "Clients" not in data:
         st.error("❌ La feuille 'Clients' est absente du fichier Excel.")
         return
@@ -23,124 +19,180 @@ def tab_analyses():
         st.warning("📄 La feuille 'Clients' est vide.")
         return
 
-    # === Nettoyage ===
+    # ---------- Helpers ----------
+    def _col_first(df_, candidates):
+        """Retourne la première colonne présente parmi candidates."""
+        for c in candidates:
+            if c in df_.columns:
+                return c
+        return None
+
     def _to_float(x):
         try:
-            s = str(x).replace(",", ".").replace("\u00A0", "").strip()
-            return float(s) if s not in ["", "nan", "None"] else 0.0
-        except:
+            s = str(x).replace("\u00A0", "").replace(",", ".").strip()
+            return float(s) if s not in ("", "nan", "None") else 0.0
+        except Exception:
             return 0.0
-
-    if "Montant honoraires (US $)" not in df.columns:
-        st.error("La colonne 'Montant honoraires (US $)' est manquante.")
-        return
-
-    for col in ["Montant honoraires (US $)", "Autres frais (US $)"]:
-        if col in df.columns:
-            df[col] = df[col].map(_to_float)
-        else:
-            df[col] = 0.0
-
-    df["Montant facturé"] = df["Montant honoraires (US $)"] + df["Autres frais (US $)"]
-
-    # Extraction de la colonne de date
-    date_col = None
-    for c in df.columns:
-        if "date" in c.lower() and "creation" in c.lower():
-            date_col = c
-            break
-    if not date_col:
-        date_col = "Date"
-    if date_col not in df.columns:
-        st.error("⚠️ Impossible de trouver une colonne de date.")
-        return
-
-    df["Date"] = pd.to_datetime(df[date_col], errors="coerce")
-    df["Année"] = df["Date"].dt.year
-    df["Mois"] = df["Date"].dt.month
-
-    # === Filtres ===
-    st.markdown("### 🔍 Filtres d’analyse")
-
-    col1, col2, col3 = st.columns(3)
-
-    categories = df["Catégories"].dropna().unique().tolist() if "Catégories" in df else []
-    souscat = df["Sous-catégories"].dropna().unique().tolist() if "Sous-catégories" in df else []
-    visas = df["Visa"].dropna().unique().tolist() if "Visa" in df else []
-
-    selected_cat = col1.multiselect("Catégories", options=categories, default=categories)
-    selected_souscat = col2.multiselect("Sous-catégories", options=souscat, default=souscat)
-    selected_visa = col3.multiselect("Visa", options=visas, default=visas)
-
-    df_filtered = df.copy()
-    if "Catégories" in df and selected_cat:
-        df_filtered = df_filtered[df_filtered["Catégories"].isin(selected_cat)]
-    if "Sous-catégories" in df and selected_souscat:
-        df_filtered = df_filtered[df_filtered["Sous-catégories"].isin(selected_souscat)]
-    if "Visa" in df and selected_visa:
-        df_filtered = df_filtered[df_filtered["Visa"].isin(selected_visa)]
-
-    # === Comparatif entre années ===
-    st.markdown("### 📅 Comparatif entre années")
-
-    available_years = sorted(df_filtered["Année"].dropna().unique().tolist())
-    if len(available_years) < 2:
-        st.info("Pas assez d'années pour comparer.")
-        return
-
-    colA, colB = st.columns(2)
-    year1 = colA.selectbox("Période 1", options=available_years, index=0)
-    year2 = colB.selectbox("Période 2", options=available_years, index=len(available_years)-1)
-
-    df_compare = (
-        df_filtered.groupby("Année")[["Montant facturé", "Montant honoraires (US $)", "Autres frais (US $)"]]
-        .sum()
-        .reset_index()
-    )
-
-    # Table pivot avec les années en colonnes
-    pivot = df_compare.set_index("Année").T
 
     def _fmt_money(v):
         try:
-            return f"{v:,.2f}".replace(",", " ").replace(".", ",") + " $"
-        except:
+            return f"{float(v):,.2f}".replace(",", " ").replace(".", ",") + " $"
+        except Exception:
             return v
 
-    pivot = pivot.applymap(_fmt_money)
+    # ---------- Mapping colonnes tolérant accents ----------
+    col_cat   = _col_first(df, ["Catégories", "Categories"])
+    col_scat  = _col_first(df, ["Sous-catégories", "Sous-categories"])
+    col_visa  = _col_first(df, ["Visa"])
+    col_mh    = _col_first(df, ["Montant honoraires (US $)", "Montant honoraires (US$)", "Honoraires (US $)"])
+    col_autre = _col_first(df, ["Autres frais (US $)", "Autres frais (US$)", "Autres Frais (US $)"])
+    col_date  = _col_first(df, ["Date création", "Date de création", "Date", "Date dossier", "Date Création"])
 
-    st.markdown("### 📊 Tableau comparatif")
+    # Valeurs par défaut si manquants
+    if col_mh is None:
+        df["Montant honoraires (US $)"] = 0.0
+        col_mh = "Montant honoraires (US $)"
+    if col_autre is None:
+        df["Autres frais (US $)"] = 0.0
+        col_autre = "Autres frais (US $)"
+
+    # Nettoyage montants
+    df[col_mh] = df[col_mh].map(_to_float)
+    df[col_autre] = df[col_autre].map(_to_float)
+    df["Montant facturé"] = df[col_mh] + df[col_autre]
+
+    # Date -> Année / Mois
+    if col_date is None or col_date not in df.columns:
+        st.error("⚠️ Impossible d'identifier la colonne de date (ex. 'Date création').")
+        return
+    df["_Date_"] = pd.to_datetime(df[col_date], errors="coerce")
+    df["Année"] = df["_Date_"].dt.year
+    df["Mois"]  = df["_Date_"].dt.month
+
+    # ---------- Filtres ----------
+    st.subheader("🎛️ Filtres")
+
+    c1, c2, c3 = st.columns(3)
+
+    # Options filtrage robustes
+    cat_opts  = sorted(df[col_cat].dropna().astype(str).unique().tolist()) if col_cat in df else []
+    scat_opts = sorted(df[col_scat].dropna().astype(str).unique().tolist()) if col_scat in df else []
+    visa_opts = sorted(df[col_visa].dropna().astype(str).unique().tolist()) if col_visa in df else []
+
+    sel_cat  = c1.multiselect("Catégories", options=cat_opts, default=cat_opts if cat_opts else [])
+    sel_scat = c2.multiselect("Sous-catégories", options=scat_opts, default=scat_opts if scat_opts else [])
+    sel_visa = c3.multiselect("Visa", options=visa_opts, default=visa_opts if visa_opts else [])
+
+    df_f = df.copy()
+    if col_cat and sel_cat:
+        df_f = df_f[df_f[col_cat].astype(str).isin(sel_cat)]
+    if col_scat and sel_scat:
+        df_f = df_f[df_f[col_scat].astype(str).isin(sel_scat)]
+    if col_visa and sel_visa:
+        df_f = df_f[df_f[col_visa].astype(str).isin(sel_visa)]
+
+    # ---------- Choix des années (jusqu'à 5) ----------
+    years_avail = sorted([int(y) for y in df_f["Année"].dropna().unique().tolist()])
+    if len(years_avail) == 0:
+        st.info("Aucune année exploitable après filtres.")
+        return
+
+    st.markdown("### 📅 Sélection des années (max 5)")
+    sel_years = st.multiselect(
+        "Années à comparer",
+        options=years_avail,
+        default=years_avail[-min(2, len(years_avail)):],  # par défaut: 2 dernières si possible
+        max_selections=5
+    )
+    if not sel_years:
+        st.info("Sélectionnez au moins une année.")
+        return
+
+    df_f = df_f[df_f["Année"].isin(sel_years)]
+
+    # ---------- Tableau comparatif multi-années ----------
+    st.markdown("### 📊 Tableau comparatif (années en colonnes)")
+
+    # Agrégations
+    aggr = (
+        df_f.groupby("Année")
+            .agg({
+                "Montant facturé": "sum",
+                col_mh: "sum",
+                col_autre: "sum",
+                "Dossier N": "count"
+            })
+            .rename(columns={
+                "Montant facturé": "Montant facturé",
+                col_mh: "Montant honoraires (US $)",
+                col_autre: "Autres frais (US $)",
+                "Dossier N": "Nombre de dossiers"
+            })
+            .reindex(sel_years, fill_value=0)
+    )
+
+    # Pivot lignes -> indicateurs, colonnes -> années
+    pivot = aggr.T  # index: indicateurs / colonnes: années
+
+    # Format monétaire pour 3 premières lignes, brut pour "Nombre de dossiers"
+    money_rows = ["Montant facturé", "Montant honoraires (US $)", "Autres frais (US $)"]
+    display = pivot.copy()
+    for row in money_rows:
+        if row in display.index:
+            display.loc[row] = display.loc[row].map(_fmt_money)
+    # Nombre de dossiers -> entier avec séparateurs d'espace
+    if "Nombre de dossiers" in display.index:
+        display.loc["Nombre de dossiers"] = display.loc["Nombre de dossiers"].map(
+            lambda x: f"{int(x):,}".replace(",", " ")
+        )
+
     st.dataframe(
-        pivot.style.set_table_styles([
+        display.style.set_table_styles([
             {"selector": "th", "props": [("text-align", "center")]},
             {"selector": "td", "props": [("text-align", "left"), ("padding-left", "12px")]}
         ]),
         use_container_width=True,
-        height=300
+        height=320
     )
 
-    # Différence absolue et relative
-    if year1 in df_compare["Année"].values and year2 in df_compare["Année"].values:
-        y1 = df_compare[df_compare["Année"] == year1].iloc[0]
-        y2 = df_compare[df_compare["Année"] == year2].iloc[0]
-        delta_facture = y2["Montant facturé"] - y1["Montant facturé"]
-
-        st.markdown("---")
-        c1, c2 = st.columns(2)
-        c1.metric(f"Montant {year1}", _fmt_money(y1['Montant facturé']))
-        c2.metric(f"Montant {year2}", _fmt_money(y2['Montant facturé']), delta=f"{delta_facture:,.2f}".replace(",", " ").replace(".", ",") + " $")
-
     st.markdown("---")
-    st.markdown("### 🧾 Top 10 des dossiers par montant facturé")
-    top10 = df_filtered.sort_values("Montant facturé", ascending=False).head(10)[
-        ["Dossier N", "Nom", "Montant facturé", "Année"]
-    ].copy()
-    top10["Montant facturé"] = top10["Montant facturé"].map(_fmt_money)
+
+    # ---------- Liste comparative des dossiers ----------
+    st.markdown("### 🧾 Dossiers par année (Année · Nom · Montant honoraires)")
+    list_cols = ["Année", "Nom", col_mh]
+    list_cols_existing = [c for c in list_cols if c in df_f.columns]
+    if len(list_cols_existing) < 2:
+        st.info("Colonnes nécessaires manquantes pour lister les dossiers.")
+        return
+
+    df_list = df_f[list_cols_existing].copy()
+    # Format montant
+    if col_mh in df_list.columns:
+        df_list[col_mh] = df_list[col_mh].map(_fmt_money)
+
+    # Tri par année puis par montant décroissant si possible
+    sort_cols = [c for c in ["Année", col_mh] if c in df_list.columns]
+    ascending = [True, False][:len(sort_cols)]
+    if sort_cols:
+        # pour trier correctement sur montant, on crée une clé numérique temporaire
+        if col_mh in df_f.columns:
+            tmp = df_f[[col_mh]].copy()
+            tmp["_num_mh_"] = df_f[col_mh].astype(float)
+            df_list = df_list.merge(tmp["_num_mh_"], left_index=True, right_index=True, how="left")
+            if "Année" in df_list.columns:
+                df_list = df_list.sort_values(by=["Année", "_num_mh_"], ascending=[True, False])
+            else:
+                df_list = df_list.sort_values(by=["_num_mh_"], ascending=[False])
+            df_list = df_list.drop(columns=["_num_mh_"])
+        else:
+            if "Année" in df_list.columns:
+                df_list = df_list.sort_values(by=["Année"])
+
     st.dataframe(
-        top10.style.set_table_styles([
+        df_list.style.set_table_styles([
             {"selector": "th", "props": [("text-align", "left")]},
             {"selector": "td", "props": [("text-align", "left"), ("padding-left", "12px")]}
         ]),
         use_container_width=True,
-        height=350
+        height=420
     )

@@ -1,6 +1,7 @@
 import streamlit as st
 import os
 import dropbox
+from io import BytesIO
 
 def tab_parametres():
     """Onglet Paramètres et intégration Dropbox"""
@@ -47,6 +48,29 @@ def tab_parametres():
 
         except Exception as err:
             st.warning(f"⚠️ Impossible d’afficher la liste des fichiers : {err}")
+
+        # --- 🔼 Téléversement vers Dropbox ---
+        st.markdown("---")
+        st.markdown("### ⬆️ Téléverser un fichier vers Dropbox")
+
+        uploaded_file = st.file_uploader("Sélectionne un fichier à envoyer :", type=["xlsx", "csv", "txt", "pdf", "docx"])
+
+        if uploaded_file is not None:
+            dropbox_path = st.text_input(
+                "Chemin de destination sur Dropbox (ex: /Clients-BL.xlsx)",
+                value=f"/{uploaded_file.name}"
+            )
+
+            if st.button("📤 Envoyer vers Dropbox"):
+                try:
+                    dbx.files_upload(
+                        uploaded_file.getvalue(),
+                        dropbox_path,
+                        mode=dropbox.files.WriteMode("overwrite")
+                    )
+                    st.success(f"✅ Fichier envoyé avec succès : `{dropbox_path}`")
+                except Exception as e:
+                    st.error(f"⚠️ Erreur lors de l'envoi : {e}")
 
         st.markdown("---")
         st.caption("💡 Si la connexion échoue, régénère ton token Dropbox dans https://www.dropbox.com/developers/apps")

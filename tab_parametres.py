@@ -1,89 +1,57 @@
 import streamlit as st
-import pandas as pd
-import io
-
-EXCEL_FILE = "Clients BL.xlsx"
+import os
+import dropbox
 
 def tab_parametres():
-    """Onglet de configuration : chargement + export Excel."""
+    """Onglet Paramètres et intégration Dropbox"""
     st.header("⚙️ Paramètres de l’application")
 
-    # Charger les données actuelles
-    if "data_xlsx" not in st.session_state:
-        st.session_state["data_xlsx"] = {}
+    st.markdown("### 🔐 Connexion Dropbox")
 
-    data = st.session_state["data_xlsx"]
+    # Récupération du token Dropbox depuis les secrets Streamlit ou les variables d'environnement
+    token = os.getenv("DROPBOX_TOKEN") or st.secrets.get("DROPBOX_TOKEN")
 
-    st.subheader("📂 Charger le fichier Excel principal")
-
-    uploaded_file = st.file_uploader("Sélectionnez le fichier Excel (Clients BL.xlsx)", type=["xlsx"])
-
-    if uploaded_file is not None:
-        try:
-            xls = pd.ExcelFile(uploaded_file)
-            data = {sheet: pd.read_excel(xls, sheet) for sheet in xls.sheet_names}
-            st.session_state["data_xlsx"] = data
-            st.success(f"✅ {len(xls.sheet_names)} feuilles chargées : {', '.join(xls.sheet_names)}")
-        except Exception as e:
-            st.error(f"Erreur lors du chargement : {e}")
-
-    elif not data:
-        st.warning("⚠️ Aucun fichier chargé. Téléversez le fichier Excel pour initialiser l’application.")
+    if not token:
+        st.error("❌ Aucun token Dropbox trouvé. Ajoute ton token dans Streamlit Cloud (Settings → Secrets).")
+        st.info("""
+        Exemple :
+        ```
+        DROPBOX_TOKEN = "sl.xxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        ```
+        """)
         return
 
-    st.markdown("---")
-    st.subheader("📑 Vérification du contenu")
+    try:
+        # Connexion à Dropbox
+        dbx = dropbox.Dropbox(token)
+        account = dbx.users_get_current_account()
 
-    if data:
-        sheets = list(data.keys())
-        st.write(f"**Feuilles disponibles :** {', '.join(sheets)}")
-        st.dataframe(pd.DataFrame({
-            "Feuille": sheets,
-            "Nombre de lignes": [len(df) for df in data.values()]
-        }))
-    else:
-        st.info("Aucune feuille chargée actuellement.")
+        st.success(f"✅ Connecté à Dropbox en tant que **{account.name.display_name}**")
+        st.caption(f"Adresse e-mail : {account.email}")
 
-    st.markdown("---")
-    st.subheader("💾 Export complet du fichier Excel")
+        # Option : afficher les fichiers récents du dossier courant
+        st.markdown("### 📂 Fichiers disponibles sur Dropbox")
 
-    if data:
-        if st.button("📤 Générer une copie du fichier Excel"):
-            try:
-                output = io.BytesIO()
-                with pd.ExcelWriter(output, engine="openpyxl") as writer:
-                    for sheet_name, df in data.items():
-                        df.to_excel(writer, sheet_name=sheet_name, index=False)
-                st.download_button(
-                    label="📥 Télécharger le fichier Excel complet",
-                    data=output.getvalue(),
-                    file_name="Export_Clients_BL.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                )
-            except Exception as e:
-                st.error(f"Erreur lors de la création du fichier : {e}")
+        try:
+            folder_path = "/"
+            files = dbx.files_list_folder(folder_path).entries
+            if not files:
+                st.info("Aucun fichier trouvé dans ce dossier Dropbox.")
+            else:
+                for f in files[:10]:  # limite à 10 fichiers
+                    if isinstance(f, dropbox.files.FileMetadata):
+                        st.write(f"📄 **{f.name}** — {f.size/1024:.1f} Ko")
+                    elif isinstance(f, dropbox.files.FolderMetadata):
+                        st.write(f"📁 **{f.name}/**")
+        except Exception as err:
+            st.warning(f"⚠️ Impossible d’afficher la liste des fichiers : {err}")
 
-    st.markdown("---")
-    st.subheader("🧹 Réinitialiser les données de la session")
+        st.markdown("---")
+        st.caption("💡 Si la connexion échoue, régénère ton token Dropbox dans https://www.dropbox.com/developers/apps")
 
-    if st.button("🗑️ Réinitialiser la session"):
-        st.session_state["data_xlsx"] = {}
-        st.success("Session réinitialisée. Rechargez l’application.")
-        st.rerun()
-
-import io
-
-if st.button("📥 Télécharger le fichier Excel mis à jour"):
-    with io.BytesIO() as buffer:
-        with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-            for sheet, df in st.session_state["data_xlsx"].items():
-                df.to_excel(writer, index=False, sheet_name=sheet)
-        buffer.seek(0)
-        st.download_button(
-            label="💾 Télécharger Clients BL.xlsx",
-            data=buffer,
-            file_name="Clients BL.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-
-
+    except dropbox.exceptions.AuthError as e:
+        st.error("🚫 Token Dropbox invalide ou expiré. Vérifie ton token dans Streamlit Secrets.")
+        st.exception(e)
+    except Exception as e:
+        st.error("❌ Erreur lors de la connexion à Dropbox :")
+        st.exception(e)

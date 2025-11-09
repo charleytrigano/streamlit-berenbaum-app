@@ -44,39 +44,45 @@ def tab_escrow():
     else:
         df["Montant"] = 0.0
 
-    # === KPIs ===
+    # === Recalcul KPI ===
     nb_dossiers = len(df)
     total_escrow = df["Montant"].sum()
 
+    def _fmt_money(v):
+        return f"{v:,.2f}".replace(",", " ").replace(".", ",") + " $"
+
+    st.markdown("### 📊 Synthèse Escrow")
     c1, c2 = st.columns(2)
     c1.metric("📦 Dossiers en Escrow", f"{nb_dossiers:,}".replace(",", " "))
-    c2.metric("💰 Montant total", f"{total_escrow:,.2f} $".replace(",", " "))
+    c2.metric("💰 Montant total", _fmt_money(total_escrow))
 
     st.markdown("---")
 
     # === Tableau principal ===
     st.subheader("📋 Liste des dossiers en Escrow")
     df_display = df.copy()
-    df_display["Montant"] = df_display["Montant"].map(lambda x: f"{x:,.2f} $".replace(",", " "))
+    df_display["Montant"] = df_display["Montant"].map(_fmt_money)
     st.dataframe(df_display, use_container_width=True, height=400)
 
     # === Mise à jour dossier ===
     st.markdown("---")
     st.subheader("📝 Mettre à jour l'état d'un dossier")
 
-    dossier_id = st.text_input("Numéro de dossier à modifier")
-    new_state = st.selectbox("Nouvel état", ["", "En attente", "Réclamé", "Réglé"])
+    dossier_id = st.text_input("Numéro de dossier à modifier", key="escrow_dossier_id")
+    new_state = st.selectbox("Nouvel état", ["", "En attente", "Réclamé", "Réglé"], key="escrow_new_state")
 
-    if st.button("✅ Enregistrer la modification"):
+    if st.button("✅ Enregistrer la modification", key="escrow_save_btn"):
         if dossier_id and new_state:
             mask = df["Dossier N"].astype(str) == dossier_id
             if mask.any():
                 df.loc[mask, "État"] = new_state
                 if new_state == "Réclamé":
                     df.loc[mask, "Date réclamation"] = pd.Timestamp.now().strftime("%Y-%m-%d")
+                # ✅ Mise à jour en mémoire
                 data[escrow_key] = df
                 st.session_state["data_xlsx"] = data
                 st.success(f"Dossier {dossier_id} mis à jour ({new_state}).")
+                st.rerun()  # 🔄 Force la mise à jour immédiate des KPI
             else:
                 st.warning("Numéro de dossier introuvable.")
 
@@ -84,7 +90,7 @@ def tab_escrow():
     st.markdown("---")
     st.subheader("📤 Exporter la liste Escrow")
 
-    if st.button("💾 Télécharger au format Excel"):
+    if st.button("💾 Télécharger au format Excel", key="escrow_export_btn"):
         from io import BytesIO
         buffer = BytesIO()
         with pd.ExcelWriter(buffer, engine="openpyxl") as writer:

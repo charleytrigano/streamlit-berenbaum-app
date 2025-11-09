@@ -127,23 +127,17 @@ def tab_gestion():
     c1, c2, c3 = st.columns(3)
     df_visa = data.get("Visa", pd.DataFrame())
     cats = sorted(df_visa["Catégorie"].dropna().unique().tolist()) if "Catégorie" in df_visa else []
-    cat_sel = c1.selectbox(
-        "Catégorie", [""] + cats,
-        index=([""] + cats).index(dossier_data.get("Catégories", "")) if dossier_data.get("Catégories", "") in cats else 0,
-        key="gestion_cat"
-    )
+    cat_sel = c1.selectbox("Catégorie", [""] + cats,
+                           index=([""] + cats).index(dossier_data.get("Catégories", "")) if dossier_data.get("Catégories", "") in cats else 0,
+                           key="gestion_cat")
     souscats = sorted(df_visa[df_visa["Catégorie"] == cat_sel]["Sous-catégorie"].dropna().unique().tolist()) if cat_sel and "Sous-catégorie" in df_visa else []
-    sous_sel = c2.selectbox(
-        "Sous-catégorie", [""] + souscats,
-        index=([""] + souscats).index(dossier_data.get("Sous-catégories", "")) if dossier_data.get("Sous-catégories", "") in souscats else 0,
-        key="gestion_souscat"
-    )
+    sous_sel = c2.selectbox("Sous-catégorie", [""] + souscats,
+                            index=([""] + souscats).index(dossier_data.get("Sous-catégories", "")) if dossier_data.get("Sous-catégories", "") in souscats else 0,
+                            key="gestion_souscat")
     visas = sorted(df_visa.columns[3:].tolist()) if not df_visa.empty else []
-    visa_sel = c3.selectbox(
-        "Visa", [""] + visas,
-        index=([""] + visas).index(dossier_data.get("Visa", "")) if dossier_data.get("Visa", "") in visas else 0,
-        key="gestion_visa"
-    )
+    visa_sel = c3.selectbox("Visa", [""] + visas,
+                            index=([""] + visas).index(dossier_data.get("Visa", "")) if dossier_data.get("Visa", "") in visas else 0,
+                            key="gestion_visa")
 
     # ---------------- Montants et acomptes ----------------
     st.subheader("💵 Informations financières")
@@ -187,6 +181,7 @@ def tab_gestion():
             return
         i = idx[0]
 
+        # Met à jour le dossier
         df.loc[i, "Nom"] = nom_client
         df.loc[i, "Date création"] = date_creation.strftime("%Y-%m-%d")
         df.loc[i, "Catégories"] = cat_sel
@@ -200,6 +195,7 @@ def tab_gestion():
         df.loc[i, "Date envoi"] = date_env.strftime("%Y-%m-%d")
         df.loc[i, "Commentaires"] = comment
 
+        # Escrow automatique ou manuel
         auto_escrow = acompte1 > 0 and honoraires == 0
         escrow_final = escrow_box or auto_escrow
         df.loc[i, "Escrow"] = "Oui" if escrow_final else "Non"
@@ -209,8 +205,10 @@ def tab_gestion():
             etat = "À réclamer" if envoye else "En attente"
             date_env_str = df.loc[i, "Date envoi"] if envoye else ""
             _upsert_escrow_row(data, escrow_key, dossier_n, nom_client, acompte1, etat, date_env_str)
+            st.session_state["data_xlsx"][escrow_key] = data[escrow_key]
         else:
             _remove_escrow_row(data, escrow_key, dossier_n)
+            st.session_state["data_xlsx"][escrow_key] = data[escrow_key]
 
         st.session_state["data_xlsx"]["Clients"] = df
 
@@ -229,6 +227,9 @@ def tab_gestion():
                 st.warning("⚠️ Aucun token Dropbox — sauvegarde locale uniquement.")
         except Exception as e:
             st.error(f"❌ Erreur Dropbox : {e}")
+
+        # Rafraîchit immédiatement la feuille Escrow
+        st.session_state["data_xlsx"]["Escrow"] = data[escrow_key]
 
         st.success(f"✅ Dossier mis à jour{' et envoyé en Escrow' if escrow_final else ''}.")
         st.rerun()

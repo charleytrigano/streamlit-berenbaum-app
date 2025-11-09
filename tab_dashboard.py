@@ -93,4 +93,14 @@ def tab_dashboard():
         if col in df_display.columns:
             df_display[col] = df_display[col].map(_fmt_money)
 
-    st.dataframe(df_display, use_container_width=True, height=400)
+    # === Alignement à droite pour les nombres ===
+    numeric_cols = ["Montant honoraires (US $)", "Autres frais (US $)", "Montant facturé", "Total payé", "Solde restant"]
+    styles = [
+        {"selector": "th", "props": [("text-align", "center")]},
+        {"selector": "td", "props": [("text-align", "right"), ("padding-right", "12px")]}
+    ]
+    st.dataframe(
+        df_display.style.set_table_styles(styles),
+        use_container_width=True,
+        height=400
+    )

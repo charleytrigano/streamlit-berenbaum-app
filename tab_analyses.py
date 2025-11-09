@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import unicodedata as _ud
 
 def tab_analyses():
     """Onglet Analyses : filtres + comparatif multi-années (jusqu'à 5) + liste dossiers."""
@@ -40,9 +41,22 @@ def tab_analyses():
         except Exception:
             return v
 
+    def _norm_txt(s):
+        if s is None:
+            return ""
+        s = str(s).strip()
+        # NFKD + suppression accents
+        s = _ud.normalize("NFKD", s)
+        s = "".join(ch for ch in s if not _ud.combining(ch))
+        # uniformisation
+        s = s.lower().replace("\u00A0", " ").strip()
+        # compactage espaces
+        s = " ".join(s.split())
+        return s
+
     # ---------- Mapping colonnes tolérant accents ----------
-    col_cat   = _col_first(df, ["Catégories", "Categories"])
-    col_scat  = _col_first(df, ["Sous-catégories", "Sous-categories"])
+    col_cat   = _col_first(df, ["Catégories", "Categories", "Categorie", "Catégorie"])
+    col_scat  = _col_first(df, ["Sous-catégories", "Sous-categories", "Sous-categorie", "Sous-catégorie", "Sous catégorie", "Sous categorie"])
     col_visa  = _col_first(df, ["Visa"])
     col_mh    = _col_first(df, ["Montant honoraires (US $)", "Montant honoraires (US$)", "Honoraires (US $)"])
     col_autre = _col_first(df, ["Autres frais (US $)", "Autres frais (US$)", "Autres Frais (US $)"])
@@ -69,27 +83,45 @@ def tab_analyses():
     df["Année"] = df["_Date_"].dt.year
     df["Mois"]  = df["_Date_"].dt.month
 
-    # ---------- Filtres ----------
+    # ---------- Colonnes normalisées pour les filtres ----------
+    if col_cat:
+        df["_cat_norm_"] = df[col_cat].map(_norm_txt)
+    else:
+        df["_cat_norm_"] = ""
+    if col_scat:
+        df["_scat_norm_"] = df[col_scat].map(_norm_txt)
+    else:
+        df["_scat_norm_"] = ""
+    if col_visa:
+        df["_visa_norm_"] = df[col_visa].map(_norm_txt)
+    else:
+        df["_visa_norm_"] = ""
+
+    # ---------- Filtres (robustes aux accents/casse/espaces) ----------
     st.subheader("🎛️ Filtres")
 
     c1, c2, c3 = st.columns(3)
 
-    # Options filtrage robustes
-    cat_opts  = sorted(df[col_cat].dropna().astype(str).unique().tolist()) if col_cat in df else []
-    scat_opts = sorted(df[col_scat].dropna().astype(str).unique().tolist()) if col_scat in df else []
-    visa_opts = sorted(df[col_visa].dropna().astype(str).unique().tolist()) if col_visa in df else []
+    cat_opts_display  = sorted(df[col_cat].dropna().astype(str).unique().tolist()) if col_cat in df else []
+    scat_opts_display = sorted(df[col_scat].dropna().astype(str).unique().tolist()) if col_scat in df else []
+    visa_opts_display = sorted(df[col_visa].dropna().astype(str).unique().tolist()) if col_visa in df else []
 
-    sel_cat  = c1.multiselect("Catégories", options=cat_opts, default=cat_opts if cat_opts else [])
-    sel_scat = c2.multiselect("Sous-catégories", options=scat_opts, default=scat_opts if scat_opts else [])
-    sel_visa = c3.multiselect("Visa", options=visa_opts, default=visa_opts if visa_opts else [])
+    sel_cat_display  = c1.multiselect("Catégories", options=cat_opts_display, default=cat_opts_display if cat_opts_display else [])
+    sel_scat_display = c2.multiselect("Sous-catégories", options=scat_opts_display, default=scat_opts_display if scat_opts_display else [])
+    sel_visa_display = c3.multiselect("Visa", options=visa_opts_display, default=visa_opts_display if visa_opts_display else [])
+
+    # Normaliser les sélections utilisateur pour filtrer
+    sel_cat_norm  = set(_norm_txt(x) for x in sel_cat_display) if sel_cat_display else set()
+    sel_scat_norm = set(_norm_txt(x) for x in sel_scat_display) if sel_scat_display else set()
+    sel_visa_norm = set(_norm_txt(x) for x in sel_visa_display) if sel_visa_display else set()
 
     df_f = df.copy()
-    if col_cat and sel_cat:
-        df_f = df_f[df_f[col_cat].astype(str).isin(sel_cat)]
-    if col_scat and sel_scat:
-        df_f = df_f[df_f[col_scat].astype(str).isin(sel_scat)]
-    if col_visa and sel_visa:
-        df_f = df_f[df_f[col_visa].astype(str).isin(sel_visa)]
+    if sel_cat_norm:
+        df_f = df_f[df_f["_cat_norm_"].isin(sel_cat_norm)]
+    if sel_scat_norm:
+        df_f = df_f[df_f["_scat_norm_"].isin(sel_scat_norm)]
+    if sel_visa_norm:
+        df_f = df_f[df_f["_visa_norm_"].isin(sel_visa_norm)]
 
     # ---------- Choix des années (jusqu'à 5) ----------
     years_avail = sorted([int(y) for y in df_f["Année"].dropna().unique().tolist()])
@@ -98,10 +130,11 @@ def tab_analyses():
         return
 
     st.markdown("### 📅 Sélection des années (max 5)")
+    default_years = years_avail[-min(2, len(years_avail)):]  # 2 dernières si possible
     sel_years = st.multiselect(
         "Années à comparer",
         options=years_avail,
-        default=years_avail[-min(2, len(years_avail)):],  # par défaut: 2 dernières si possible
+        default=default_years,
         max_selections=5
     )
     if not sel_years:
@@ -113,7 +146,6 @@ def tab_analyses():
     # ---------- Tableau comparatif multi-années ----------
     st.markdown("### 📊 Tableau comparatif (années en colonnes)")
 
-    # Agrégations
     aggr = (
         df_f.groupby("Année")
             .agg({
@@ -131,20 +163,15 @@ def tab_analyses():
             .reindex(sel_years, fill_value=0)
     )
 
-    # Pivot lignes -> indicateurs, colonnes -> années
     pivot = aggr.T  # index: indicateurs / colonnes: années
 
-    # Format monétaire pour 3 premières lignes, brut pour "Nombre de dossiers"
     money_rows = ["Montant facturé", "Montant honoraires (US $)", "Autres frais (US $)"]
     display = pivot.copy()
     for row in money_rows:
         if row in display.index:
             display.loc[row] = display.loc[row].map(_fmt_money)
-    # Nombre de dossiers -> entier avec séparateurs d'espace
     if "Nombre de dossiers" in display.index:
-        display.loc["Nombre de dossiers"] = display.loc["Nombre de dossiers"].map(
-            lambda x: f"{int(x):,}".replace(",", " ")
-        )
+        display.loc["Nombre de dossiers"] = display.loc["Nombre de dossiers"].map(lambda x: f"{int(x):,}".replace(",", " "))
 
     st.dataframe(
         display.style.set_table_styles([
@@ -166,27 +193,17 @@ def tab_analyses():
         return
 
     df_list = df_f[list_cols_existing].copy()
-    # Format montant
     if col_mh in df_list.columns:
         df_list[col_mh] = df_list[col_mh].map(_fmt_money)
 
     # Tri par année puis par montant décroissant si possible
-    sort_cols = [c for c in ["Année", col_mh] if c in df_list.columns]
-    ascending = [True, False][:len(sort_cols)]
-    if sort_cols:
-        # pour trier correctement sur montant, on crée une clé numérique temporaire
-        if col_mh in df_f.columns:
-            tmp = df_f[[col_mh]].copy()
-            tmp["_num_mh_"] = df_f[col_mh].astype(float)
-            df_list = df_list.merge(tmp["_num_mh_"], left_index=True, right_index=True, how="left")
-            if "Année" in df_list.columns:
-                df_list = df_list.sort_values(by=["Année", "_num_mh_"], ascending=[True, False])
-            else:
-                df_list = df_list.sort_values(by=["_num_mh_"], ascending=[False])
-            df_list = df_list.drop(columns=["_num_mh_"])
-        else:
-            if "Année" in df_list.columns:
-                df_list = df_list.sort_values(by=["Année"])
+    if "Année" in df_list.columns and col_mh in df_f.columns:
+        # clé numérique temporaire pour trier correctement
+        nums = df_f[col_mh].astype(float)
+        df_list = df_list.join(nums.rename("_num_mh_"))
+        df_list = df_list.sort_values(by=["Année", "_num_mh_"], ascending=[True, False]).drop(columns=["_num_mh_"])
+    elif "Année" in df_list.columns:
+        df_list = df_list.sort_values(by=["Année"])
 
     st.dataframe(
         df_list.style.set_table_styles([

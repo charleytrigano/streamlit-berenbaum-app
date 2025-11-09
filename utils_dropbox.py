@@ -28,3 +28,50 @@ def save_to_dropbox(local_file_path: str, dropbox_path: str):
     except Exception as e:
         st.error(f"⚠️ Erreur lors de la sauvegarde Dropbox : {e}")
         return False
+
+import streamlit as st
+import pandas as pd
+import io
+import dropbox
+import os
+
+def save_xlsx_local(data_dict, filename="Clients_BL.xlsx"):
+    """Sauvegarde locale du fichier Excel modifié"""
+    try:
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            for sheet, df in data_dict.items():
+                df.to_excel(writer, sheet_name=sheet, index=False)
+        with open(filename, "wb") as f:
+            f.write(output.getvalue())
+        st.info(f"💾 Fichier sauvegardé localement : {filename}")
+    except Exception as e:
+        st.error(f"❌ Erreur lors de la sauvegarde locale : {e}")
+
+
+def save_xlsx_to_dropbox(data_dict, dropbox_path="/Clients-BL.xlsx"):
+    """Sauvegarde du fichier Excel sur Dropbox"""
+    token = os.getenv("DROPBOX_TOKEN") or st.secrets.get("DROPBOX_TOKEN")
+    if not token:
+        st.warning("⚠️ Aucun token Dropbox trouvé. Ajoutez-le dans les secrets Streamlit.")
+        return
+
+    try:
+        dbx = dropbox.Dropbox(token)
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            for sheet, df in data_dict.items():
+                df.to_excel(writer, sheet_name=sheet, index=False)
+
+        dbx.files_upload(
+            output.getvalue(),
+            dropbox_path,
+            mode=dropbox.files.WriteMode("overwrite")
+        )
+        st.success(f"✅ Fichier enregistré sur Dropbox : {dropbox_path}")
+
+    except dropbox.exceptions.AuthError:
+        st.error("🚫 Token Dropbox invalide ou expiré.")
+    except Exception as e:
+        st.error(f"❌ Erreur lors de la sauvegarde Dropbox : {e}")
+

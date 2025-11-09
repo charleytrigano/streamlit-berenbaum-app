@@ -6,11 +6,11 @@ import io
 import os
 
 DROPBOX_TOKEN = os.getenv("DROPBOX_TOKEN")
-DROPBOX_PATH  = "/Clients-BL.xlsx"
+DROPBOX_PATH = "/Clients-BL.xlsx"
 ESCROW_COLUMNS = ["Dossier N", "Nom", "Montant", "Date envoi", "État", "Date réclamation"]
 
 # --------------------------------------------------------------------
-# utilitaires
+# Fonctions utilitaires
 # --------------------------------------------------------------------
 def _safe_to_date(v, default=date.today()):
     try:
@@ -77,7 +77,7 @@ def _remove_escrow_row(data_dict, escrow_key, dossier_n):
     data_dict[escrow_key] = df_e[df_e["Dossier N"].astype(str) != dossier_n_str].reset_index(drop=True)
 
 # --------------------------------------------------------------------
-# onglet principal
+# Onglet principal
 # --------------------------------------------------------------------
 def tab_gestion():
     st.header("🗂️ Gestion des dossiers")
@@ -99,8 +99,8 @@ def tab_gestion():
     c1, c2 = st.columns(2)
     dossiers = sorted(df["Dossier N"].dropna().astype(str).tolist())
     noms = sorted(df["Nom"].dropna().astype(str).tolist())
-    sel_dossier = c1.selectbox("Dossier N", [""] + dossiers)
-    sel_nom = c2.selectbox("Nom du client", [""] + noms)
+    sel_dossier = c1.selectbox("Dossier N", [""] + dossiers, key="gestion_sel_dossier")
+    sel_nom = c2.selectbox("Nom du client", [""] + noms, key="gestion_sel_nom")
 
     dossier_data = None
     if sel_dossier:
@@ -114,8 +114,8 @@ def tab_gestion():
     # ---------------- Informations principales ----------------
     st.subheader("🧾 Informations principales")
     c1, c2, c3 = st.columns(3)
-    dossier_n = c1.text_input("Dossier N", dossier_data.get("Dossier N", ""))
-    nom_client = c2.text_input("Nom du client", dossier_data.get("Nom", ""))
+    dossier_n = c1.text_input("Dossier N", dossier_data.get("Dossier N", ""), key="gestion_dossier")
+    nom_client = c2.text_input("Nom du client", dossier_data.get("Nom", ""), key="gestion_nom")
     date_creation = c3.date_input(
         "Date (création)",
         value=_safe_to_date(dossier_data.get("Date création", date.today())),
@@ -127,48 +127,60 @@ def tab_gestion():
     c1, c2, c3 = st.columns(3)
     df_visa = data.get("Visa", pd.DataFrame())
     cats = sorted(df_visa["Catégorie"].dropna().unique().tolist()) if "Catégorie" in df_visa else []
-    cat_sel = c1.selectbox("Catégorie", [""] + cats, index=([""] + cats).index(dossier_data.get("Catégories", "")) if dossier_data.get("Catégories", "") in cats else 0)
+    cat_sel = c1.selectbox(
+        "Catégorie", [""] + cats,
+        index=([""] + cats).index(dossier_data.get("Catégories", "")) if dossier_data.get("Catégories", "") in cats else 0,
+        key="gestion_cat"
+    )
     souscats = sorted(df_visa[df_visa["Catégorie"] == cat_sel]["Sous-catégorie"].dropna().unique().tolist()) if cat_sel and "Sous-catégorie" in df_visa else []
-    sous_sel = c2.selectbox("Sous-catégorie", [""] + souscats, index=([""] + souscats).index(dossier_data.get("Sous-catégories", "")) if dossier_data.get("Sous-catégories", "") in souscats else 0)
+    sous_sel = c2.selectbox(
+        "Sous-catégorie", [""] + souscats,
+        index=([""] + souscats).index(dossier_data.get("Sous-catégories", "")) if dossier_data.get("Sous-catégories", "") in souscats else 0,
+        key="gestion_souscat"
+    )
     visas = sorted(df_visa.columns[3:].tolist()) if not df_visa.empty else []
-    visa_sel = c3.selectbox("Visa", [""] + visas, index=([""] + visas).index(dossier_data.get("Visa", "")) if dossier_data.get("Visa", "") in visas else 0)
+    visa_sel = c3.selectbox(
+        "Visa", [""] + visas,
+        index=([""] + visas).index(dossier_data.get("Visa", "")) if dossier_data.get("Visa", "") in visas else 0,
+        key="gestion_visa"
+    )
 
     # ---------------- Montants et acomptes ----------------
     st.subheader("💵 Informations financières")
     c1, c2, c3 = st.columns(3)
     honoraires = c1.number_input("Montant honoraires (US $)", min_value=0.0, step=100.0, format="%.2f",
-                                 value=float(_to_float(dossier_data.get("Montant honoraires (US $)", 0.0))))
+                                 value=float(_to_float(dossier_data.get("Montant honoraires (US $)", 0.0))), key="gestion_honoraires")
     date_a1 = c2.date_input("Date Acompte 1", value=_safe_to_date(dossier_data.get("Date Acompte 1", date.today())), key="gestion_date_a1")
     acompte1 = c3.number_input("Acompte 1 (US $)", min_value=0.0, step=100.0, format="%.2f",
-                               value=float(_to_float(dossier_data.get("Acompte 1", 0.0))))
+                               value=float(_to_float(dossier_data.get("Acompte 1", 0.0))), key="gestion_acompte1")
 
     st.subheader("💳 Mode de paiement Acompte 1")
     m1, m2, m3, m4 = st.columns(4)
     existing = str(dossier_data.get("Mode paiement 1", "") or "")
     defaults = [m.strip() for m in existing.split(",") if m.strip()]
-    mode1 = m1.checkbox("Chèque", value=("Chèque" in defaults))
-    mode2 = m2.checkbox("Virement", value=("Virement" in defaults))
-    mode3 = m3.checkbox("Carte bancaire", value=("Carte bancaire" in defaults))
-    mode4 = m4.checkbox("Venmo", value=("Venmo" in defaults))
+    mode1 = m1.checkbox("Chèque", value=("Chèque" in defaults), key="gestion_mode1")
+    mode2 = m2.checkbox("Virement", value=("Virement" in defaults), key="gestion_mode2")
+    mode3 = m3.checkbox("Carte bancaire", value=("Carte bancaire" in defaults), key="gestion_mode3")
+    mode4 = m4.checkbox("Venmo", value=("Venmo" in defaults), key="gestion_mode4")
     mode_paiement_1 = ", ".join([label for label, flag in [
         ("Chèque", mode1), ("Virement", mode2), ("Carte bancaire", mode3), ("Venmo", mode4)
     ] if flag])
 
     # ---------------- Escrow & envoi ----------------
     st.subheader("🛡️ Escrow")
-    escrow_box = st.checkbox("Envoyé en Escrow", value=(str(dossier_data.get("Escrow", "")).lower() == "oui"))
+    escrow_box = st.checkbox("Envoyé en Escrow", value=(str(dossier_data.get("Escrow", "")).lower() == "oui"), key="gestion_escrow")
     st.subheader("📤 Envoi du dossier")
     c1, c2 = st.columns(2)
-    envoye = c1.checkbox("Dossier envoyé", value=(str(dossier_data.get("Dossier envoyé", "")).lower() == "oui"))
+    envoye = c1.checkbox("Dossier envoyé", value=(str(dossier_data.get("Dossier envoyé", "")).lower() == "oui"), key="gestion_envoye")
     date_env = c2.date_input("Date envoi", value=_safe_to_date(dossier_data.get("Date envoi", date.today())), key="gestion_date_env")
 
     st.subheader("📝 Commentaires")
-    comment = st.text_area("Commentaires", value=dossier_data.get("Commentaires", ""))
+    comment = st.text_area("Commentaires", value=dossier_data.get("Commentaires", ""), key="gestion_comment")
 
     st.markdown("---")
 
     # ---------------- Sauvegarde ----------------
-    if st.button("💾 Enregistrer les modifications"):
+    if st.button("💾 Enregistrer les modifications", key="gestion_save_btn"):
         idx = df.index[df["Dossier N"].astype(str) == str(dossier_n)]
         if idx.empty:
             st.error("❌ Dossier introuvable.")
@@ -188,7 +200,6 @@ def tab_gestion():
         df.loc[i, "Date envoi"] = date_env.strftime("%Y-%m-%d")
         df.loc[i, "Commentaires"] = comment
 
-        # Règle automatique Escrow
         auto_escrow = acompte1 > 0 and honoraires == 0
         escrow_final = escrow_box or auto_escrow
         df.loc[i, "Escrow"] = "Oui" if escrow_final else "Non"

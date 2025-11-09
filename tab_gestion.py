@@ -144,19 +144,37 @@ def tab_gestion():
     # ---------------- Catégories et visa ----------------
     st.subheader("📂 Classification et visa")
     c1, c2, c3 = st.columns(3)
+
     df_visa = data.get("Visa", pd.DataFrame())
+    if not df_visa.empty:
+        df_visa.columns = df_visa.columns.map(str)
+        df_visa = df_visa.dropna(how="all")
+
     cats = sorted(df_visa["Catégorie"].dropna().unique().tolist()) if "Catégorie" in df_visa else []
-    cat_sel = c1.selectbox("Catégorie", [""] + cats,
-                           index=([""] + cats).index(dossier_data.get("Catégories", "")) if dossier_data.get("Catégories", "") in cats else 0,
-                           key="gestion_cat")
-    souscats = sorted(df_visa[df_visa["Catégorie"] == cat_sel]["Sous-catégorie"].dropna().unique().tolist()) if cat_sel and "Sous-catégorie" in df_visa else []
-    sous_sel = c2.selectbox("Sous-catégorie", [""] + souscats,
-                            index=([""] + souscats).index(dossier_data.get("Sous-catégories", "")) if dossier_data.get("Sous-catégories", "") in souscats else 0,
-                            key="gestion_souscat")
+    cat_sel = c1.selectbox(
+        "Catégorie",
+        [""] + cats,
+        index=([""] + cats).index(dossier_data.get("Catégories", "")) if dossier_data.get("Catégories", "") in cats else 0,
+        key="gestion_cat"
+    )
+
+    souscats = []
+    if cat_sel and "Sous-catégorie" in df_visa:
+        souscats = df_visa.loc[df_visa["Catégorie"] == cat_sel, "Sous-catégorie"].dropna().unique().tolist()
+    sous_sel = c2.selectbox(
+        "Sous-catégorie",
+        [""] + sorted(souscats),
+        index=([""] + sorted(souscats)).index(dossier_data.get("Sous-catégories", "")) if dossier_data.get("Sous-catégories", "") in souscats else 0,
+        key="gestion_souscat"
+    )
+
     visas = sorted(df_visa.columns[3:].tolist()) if not df_visa.empty else []
-    visa_sel = c3.selectbox("Visa", [""] + visas,
-                            index=([""] + visas).index(dossier_data.get("Visa", "")) if dossier_data.get("Visa", "") in visas else 0,
-                            key="gestion_visa")
+    visa_sel = c3.selectbox(
+        "Visa",
+        [""] + visas,
+        index=([""] + visas).index(dossier_data.get("Visa", "")) if dossier_data.get("Visa", "") in visas else 0,
+        key="gestion_visa"
+    )
 
     # ---------------- Montants et acomptes ----------------
     st.subheader("💵 Informations financières")
@@ -178,6 +196,27 @@ def tab_gestion():
     mode_paiement_1 = ", ".join([label for label, flag in [
         ("Chèque", mode1), ("Virement", mode2), ("Carte bancaire", mode3), ("Venmo", mode4)
     ] if flag])
+
+    # ---------------- Statut du dossier ----------------
+    st.subheader("📌 Statut du dossier")
+    c1, c2 = st.columns(2)
+    accepte = c1.checkbox("✅ Dossier accepté", value=(str(dossier_data.get("Dossier accepté", "")).lower() == "oui"), key="gestion_accepte")
+    date_acc = c2.date_input("Date acceptation", value=_safe_to_date(dossier_data.get("Date acceptation", date.today())), key="gestion_date_acc")
+
+    c3, c4 = st.columns(2)
+    refuse = c3.checkbox("❌ Dossier refusé", value=(str(dossier_data.get("Dossier refusé", "")).lower() == "oui"), key="gestion_refuse")
+    date_ref = c4.date_input("Date refus", value=_safe_to_date(dossier_data.get("Date refus", date.today())), key="gestion_date_ref")
+
+    c5, c6 = st.columns(2)
+    annule = c5.checkbox("🚫 Dossier annulé", value=(str(dossier_data.get("Dossier annulé", "")).lower() == "oui"), key="gestion_annule")
+    date_ann = c6.date_input("Date annulation", value=_safe_to_date(dossier_data.get("Date annulation", date.today())), key="gestion_date_ann")
+
+    rfe = st.checkbox("⚠️ RFE (Request For Evidence)", value=(str(dossier_data.get("RFE", "")).lower() == "oui"), key="gestion_rfe")
+
+    # Validation logique RFE
+    if (accepte or refuse or annule) and not rfe:
+        st.error("⚠️ Vous devez cocher la case 'RFE' si le dossier est accepté, refusé ou annulé.")
+        return
 
     # ---------------- Escrow & envoi ----------------
     st.subheader("🛡️ Escrow")
@@ -209,6 +248,13 @@ def tab_gestion():
         df.loc[i, "Acompte 1"] = acompte1
         df.loc[i, "Date Acompte 1"] = date_a1.strftime("%Y-%m-%d")
         df.loc[i, "Mode paiement 1"] = mode_paiement_1
+        df.loc[i, "Dossier accepté"] = "Oui" if accepte else "Non"
+        df.loc[i, "Date acceptation"] = date_acc.strftime("%Y-%m-%d")
+        df.loc[i, "Dossier refusé"] = "Oui" if refuse else "Non"
+        df.loc[i, "Date refus"] = date_ref.strftime("%Y-%m-%d")
+        df.loc[i, "Dossier annulé"] = "Oui" if annule else "Non"
+        df.loc[i, "Date annulation"] = date_ann.strftime("%Y-%m-%d")
+        df.loc[i, "RFE"] = "Oui" if rfe else "Non"
         df.loc[i, "Dossier envoyé"] = "Oui" if envoye else "Non"
         df.loc[i, "Date envoi"] = date_env.strftime("%Y-%m-%d")
         df.loc[i, "Commentaires"] = comment
@@ -246,8 +292,6 @@ def tab_gestion():
         except Exception as e:
             st.error(f"❌ Erreur Dropbox : {e}")
 
-        # Rafraîchit immédiatement la feuille Escrow
         st.session_state["data_xlsx"]["Escrow"] = data[escrow_key]
-
         st.success(f"✅ Dossier mis à jour{' et envoyé en Escrow' if escrow_final else ''}.")
         st.rerun()

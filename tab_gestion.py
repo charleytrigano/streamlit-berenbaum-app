@@ -94,6 +94,25 @@ def tab_gestion():
         st.warning("📄 Aucun dossier client.")
         return
 
+    # ---------------- Vérification automatique des dossiers Escrow ----------------
+    st.markdown("### 🔍 Vérification automatique des dossiers à placer en Escrow")
+    escrow_key = _ensure_escrow_sheet(data)
+    auto_escrow_count = 0
+
+    for _, row in df.iterrows():
+        acompte = _to_float(row.get("Acompte 1", 0))
+        honor = _to_float(row.get("Montant honoraires (US $)", 0))
+        if acompte > 0 and honor == 0:
+            dossier_n = row.get("Dossier N", "")
+            nom = row.get("Nom", "")
+            if dossier_n and nom:
+                _upsert_escrow_row(data, escrow_key, dossier_n, nom, acompte, "En attente")
+                auto_escrow_count += 1
+
+    if auto_escrow_count > 0:
+        st.info(f"✅ {auto_escrow_count} dossiers ont été automatiquement ajoutés à Escrow.")
+        st.session_state["data_xlsx"]["Escrow"] = data[escrow_key]
+
     # ---------------- Sélection dossier ----------------
     st.subheader("🔎 Sélection du dossier")
     c1, c2 = st.columns(2)
@@ -170,7 +189,6 @@ def tab_gestion():
 
     st.subheader("📝 Commentaires")
     comment = st.text_area("Commentaires", value=dossier_data.get("Commentaires", ""), key="gestion_comment")
-
     st.markdown("---")
 
     # ---------------- Sauvegarde ----------------

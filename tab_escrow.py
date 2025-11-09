@@ -12,10 +12,6 @@ def tab_escrow():
 
     data = st.session_state["data_xlsx"]
 
-    # 🔍 Diagnostic : afficher les feuilles disponibles
-    with st.expander("🔍 Feuilles Excel disponibles (diagnostic)"):
-        st.write(list(data.keys()))
-
     # Recherche intelligente de la feuille Escrow
     escrow_key = None
     for key in data.keys():
@@ -29,14 +25,13 @@ def tab_escrow():
 
     df = data[escrow_key]
     if isinstance(df, dict):
-        # Parfois les fichiers Excel sont lus en dictionnaires
         df = pd.DataFrame(df)
 
     if df.empty:
         st.info("📭 Aucun dossier en Escrow actuellement.")
         return
 
-    # Nettoyage
+    # Nettoyage et conversion des montants
     def _to_float(x):
         try:
             s = str(x).replace(",", ".").replace("\u00A0", "").strip()
@@ -46,17 +41,26 @@ def tab_escrow():
 
     if "Montant" in df.columns:
         df["Montant"] = df["Montant"].map(_to_float)
+    else:
+        df["Montant"] = 0.0
 
-    # 💰 Total Escrow
-    total_escrow = df["Montant"].sum() if "Montant" in df.columns else 0.0
+    # === KPIs ===
+    nb_dossiers = len(df)
+    total_escrow = df["Montant"].sum()
 
-    # 📋 Tableau principal
-    st.subheader(f"📦 Dossiers en Escrow ({len(df)})")
-    st.dataframe(df, use_container_width=True, height=400)
+    c1, c2 = st.columns(2)
+    c1.metric("📦 Dossiers en Escrow", f"{nb_dossiers:,}".replace(",", " "))
+    c2.metric("💰 Montant total", f"{total_escrow:,.2f} $".replace(",", " "))
 
-    st.metric("💰 Total Escrow", f"${total_escrow:,.2f}")
+    st.markdown("---")
 
-    # 📥 Mettre à jour un dossier
+    # === Tableau principal ===
+    st.subheader("📋 Liste des dossiers en Escrow")
+    df_display = df.copy()
+    df_display["Montant"] = df_display["Montant"].map(lambda x: f"{x:,.2f} $".replace(",", " "))
+    st.dataframe(df_display, use_container_width=True, height=400)
+
+    # === Mise à jour dossier ===
     st.markdown("---")
     st.subheader("📝 Mettre à jour l'état d'un dossier")
 
@@ -76,7 +80,7 @@ def tab_escrow():
             else:
                 st.warning("Numéro de dossier introuvable.")
 
-    # 📤 Export
+    # === Export Excel ===
     st.markdown("---")
     st.subheader("📤 Exporter la liste Escrow")
 

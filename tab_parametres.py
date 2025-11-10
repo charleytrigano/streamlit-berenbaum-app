@@ -1,82 +1,41 @@
 import streamlit as st
-import os
-import dropbox
-from io import BytesIO
+from utils_gdrive_oauth import get_gdrive_service, upload_to_drive, download_from_drive
+import pandas as pd
 
 def tab_parametres():
-    """Onglet Paramètres et intégration Dropbox"""
-    st.header("⚙️ Paramètres de l’application")
+    st.title("⚙️ Paramètres de connexion Google Drive")
 
-    st.markdown("### 🔐 Connexion Dropbox")
+    st.markdown("""
+    Cette page permet de connecter ton application à Google Drive via OAuth2.
+    Une fois connecté, tu pourras sauvegarder et charger ton fichier Excel directement depuis ton Drive.
+    """)
 
-    # Récupération du token Dropbox
-    token = os.getenv("DROPBOX_TOKEN") or st.secrets.get("DROPBOX_TOKEN")
+    st.divider()
 
-    if not token:
-        st.error("❌ Aucun token Dropbox trouvé. Ajoute ton token dans Streamlit Cloud (Settings → Secrets).")
-        st.info("""
-        Exemple :
-        ```
-        DROPBOX_TOKEN = "sl.xxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-        ```
-        """)
-        return
-
-    try:
-        # Connexion Dropbox
-        dbx = dropbox.Dropbox(token)
-        account = dbx.users_get_current_account()
-
-        st.success(f"✅ Connecté à Dropbox en tant que **{account.name.display_name}**")
-        st.caption(f"Adresse e-mail : {account.email}")
-
-        st.markdown("### 📂 Fichiers disponibles sur Dropbox")
-
+    # Test de connexion
+    if st.button("🔐 Se connecter à Google Drive"):
         try:
-            # ✅ Correction ici : chemin vide = racine Dropbox
-            result = dbx.files_list_folder(path="")
-            files = result.entries
+            service = get_gdrive_service()
+            about = service.about().get(fields="user").execute()
+            user = about.get("user", {})
+            st.success(f"✅ Connecté à Google Drive en tant que **{user.get('displayName', 'Inconnu')}** ({user.get('emailAddress', 'email inconnu')})")
+        except Exception as e:
+            st.error(f"❌ Erreur de connexion : {e}")
 
-            if not files:
-                st.info("Aucun fichier trouvé dans la racine Dropbox.")
-            else:
-                for f in files[:10]:
-                    if isinstance(f, dropbox.files.FileMetadata):
-                        st.write(f"📄 **{f.name}** — {f.size/1024:.1f} Ko")
-                    elif isinstance(f, dropbox.files.FolderMetadata):
-                        st.write(f"📁 **{f.name}/**")
+    st.divider()
 
-        except Exception as err:
-            st.warning(f"⚠️ Impossible d’afficher la liste des fichiers : {err}")
+    # Section test upload
+    st.subheader("📤 Test d’upload vers Google Drive")
+    if st.button("Uploader un fichier de test"):
+        df_test = pd.DataFrame({"Nom": ["Jean", "Marie"], "Montant": [1200, 800]})
+        data_dict = {"Test": df_test}
+        upload_to_drive(data_dict, "TestUpload.xlsx")
 
-        # --- 🔼 Téléversement vers Dropbox ---
-        st.markdown("---")
-        st.markdown("### ⬆️ Téléverser un fichier vers Dropbox")
+    st.divider()
 
-        uploaded_file = st.file_uploader("Sélectionne un fichier à envoyer :", type=["xlsx", "csv", "txt", "pdf", "docx"])
-
-        if uploaded_file is not None:
-            dropbox_path = st.text_input(
-                "Chemin de destination sur Dropbox (ex: /Clients-BL.xlsx)",
-                value=f"/{uploaded_file.name}"
-            )
-
-            if st.button("📤 Envoyer vers Dropbox"):
-                try:
-                    dbx.files_upload(
-                        uploaded_file.getvalue(),
-                        dropbox_path,
-                        mode=dropbox.files.WriteMode("overwrite")
-                    )
-                    st.success(f"✅ Fichier envoyé avec succès : `{dropbox_path}`")
-                except Exception as e:
-                    st.error(f"⚠️ Erreur lors de l'envoi : {e}")
-
-        st.markdown("---")
-        st.caption("💡 Si la connexion échoue, régénère ton token Dropbox dans https://www.dropbox.com/developers/apps")
-
-    except dropbox.exceptions.AuthError:
-        st.error("🚫 Token Dropbox invalide ou expiré. Vérifie ton token dans Streamlit Secrets.")
-    except Exception as e:
-        st.error("❌ Erreur lors de la connexion à Dropbox :")
-        st.exception(e)
+    # Section test download
+    st.subheader("📥 Test de téléchargement depuis Google Drive")
+    if st.button("Télécharger le fichier de test"):
+        data = download_from_drive("TestUpload.xlsx")
+        if data:
+            st.write(data["Test"].head())

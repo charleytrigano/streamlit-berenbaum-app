@@ -56,39 +56,82 @@ def tab_gestion():
     nom_client = c2.text_input("Nom du client", dossier_data.get("Nom", ""))
     date_creation = c3.date_input(
         "Date (création)",
-        value=pd.to_datetime(dossier_data.get("Date", date.today()), errors="coerce").date() if pd.notna(dossier_data.get("Date", None)) else date.today(),
-        key="gestion_date_creation"
+        value=pd.to_datetime(dossier_data.get("Date", date.today()), errors="coerce").date()
+        if pd.notna(dossier_data.get("Date", None))
+        else date.today(),
+        key=f"gestion_date_creation_{dossier_num}"
     )
 
     # --- Ligne 2 : Catégorie / Sous-catégorie / Visa ---
     c4, c5, c6 = st.columns(3)
     visa_sheet = data.get("Visa", pd.DataFrame())
     categories = sorted(visa_sheet["Catégories"].dropna().unique().tolist()) if "Catégories" in visa_sheet else []
-    cat_sel = c4.selectbox("Catégorie", [""] + categories, index=([""] + categories).index(dossier_data.get("Catégories", "")) if dossier_data.get("Catégories", "") in categories else 0)
+
+    cat_sel = c4.selectbox(
+        "Catégorie",
+        [""] + categories,
+        index=([""] + categories).index(dossier_data.get("Catégories", ""))
+        if dossier_data.get("Catégories", "") in categories
+        else 0,
+        key=f"cat_{dossier_num}"
+    )
 
     sous_categories = []
     if not visa_sheet.empty and "Sous-catégories" in visa_sheet.columns:
         sous_categories = sorted(
             visa_sheet.loc[visa_sheet["Catégories"] == cat_sel, "Sous-catégories"].dropna().unique().tolist()
         )
-    sous_cat_sel = c5.selectbox("Sous-catégorie", [""] + sous_categories, index=([""] + sous_categories).index(dossier_data.get("Sous-catégories", "")) if dossier_data.get("Sous-catégories", "") in sous_categories else 0)
+
+    sous_cat_sel = c5.selectbox(
+        "Sous-catégorie",
+        [""] + sous_categories,
+        index=([""] + sous_categories).index(dossier_data.get("Sous-catégories", ""))
+        if dossier_data.get("Sous-catégories", "") in sous_categories
+        else 0,
+        key=f"souscat_{dossier_num}"
+    )
 
     visa_list = sorted(visa_sheet.columns[2:].tolist()) if not visa_sheet.empty else []
-    visa_sel = c6.selectbox("Visa", [""] + visa_list, index=([""] + visa_list).index(dossier_data.get("Visa", "")) if dossier_data.get("Visa", "") in visa_list else 0)
+    visa_sel = c6.selectbox(
+        "Visa",
+        [""] + visa_list,
+        index=([""] + visa_list).index(dossier_data.get("Visa", ""))
+        if dossier_data.get("Visa", "") in visa_list
+        else 0,
+        key=f"visa_{dossier_num}"
+    )
 
     # --- Ligne 3 : Montants / Acompte 1 ---
     c7, c8, c9 = st.columns(3)
-    honoraires = c7.number_input("Montant honoraires (US $)", value=float(dossier_data.get("Montant honoraires (US $)", 0)) if pd.notna(dossier_data.get("Montant honoraires (US $)", None)) else 0.0)
-    date_acompte1 = c8.date_input("Date Acompte 1", value=pd.to_datetime(dossier_data.get("Date Acompte 1", date.today()), errors="coerce").date() if pd.notna(dossier_data.get("Date Acompte 1", None)) else date.today())
-    acompte1 = c9.number_input("Acompte 1 (US $)", value=float(dossier_data.get("Acompte 1", 0)) if pd.notna(dossier_data.get("Acompte 1", None)) else 0.0)
+    honoraires = c7.number_input(
+        "Montant honoraires (US $)",
+        value=float(dossier_data.get("Montant honoraires (US $)", 0))
+        if pd.notna(dossier_data.get("Montant honoraires (US $)", None))
+        else 0.0,
+        key=f"hon_{dossier_num}"
+    )
+    date_acompte1 = c8.date_input(
+        "Date Acompte 1",
+        value=pd.to_datetime(dossier_data.get("Date Acompte 1", date.today()), errors="coerce").date()
+        if pd.notna(dossier_data.get("Date Acompte 1", None))
+        else date.today(),
+        key=f"date_a1_{dossier_num}"
+    )
+    acompte1 = c9.number_input(
+        "Acompte 1 (US $)",
+        value=float(dossier_data.get("Acompte 1", 0))
+        if pd.notna(dossier_data.get("Acompte 1", None))
+        else 0.0,
+        key=f"a1_{dossier_num}"
+    )
 
     # --- Ligne 4 : Mode de paiement ---
     st.markdown("💳 **Mode de paiement**")
     c10, c11, c12, c13 = st.columns(4)
-    mode_cheque = c10.checkbox("Chèque", value=dossier_data.get("Mode paiement", "") == "Chèque")
-    mode_virement = c11.checkbox("Virement", value=dossier_data.get("Mode paiement", "") == "Virement")
-    mode_cb = c12.checkbox("Carte bancaire", value=dossier_data.get("Mode paiement", "") == "Carte bancaire")
-    mode_venmo = c13.checkbox("Venmo", value=dossier_data.get("Mode paiement", "") == "Venmo")
+    mode_cheque = c10.checkbox("Chèque", value=dossier_data.get("Mode paiement", "") == "Chèque", key=f"cheque_{dossier_num}")
+    mode_virement = c11.checkbox("Virement", value=dossier_data.get("Mode paiement", "") == "Virement", key=f"vir_{dossier_num}")
+    mode_cb = c12.checkbox("Carte bancaire", value=dossier_data.get("Mode paiement", "") == "Carte bancaire", key=f"cb_{dossier_num}")
+    mode_venmo = c13.checkbox("Venmo", value=dossier_data.get("Mode paiement", "") == "Venmo", key=f"venmo_{dossier_num}")
 
     if mode_cheque:
         mode_paiement = "Chèque"
@@ -103,26 +146,25 @@ def tab_gestion():
 
     # --- Ligne 5 : Escrow ---
     escrow_auto = acompte1 > 0 and honoraires == 0
-    escrow = st.checkbox("Mettre en Escrow", value=dossier_data.get("Escrow", escrow_auto))
+    escrow = st.checkbox("Mettre en Escrow", value=dossier_data.get("Escrow", escrow_auto), key=f"escrow_{dossier_num}")
 
     # --- Ligne 6 : Statut du dossier ---
     st.subheader("📂 Statut du dossier")
-    c14, c15 = st.columns([1, 3])
     col_a, col_b, col_c = st.columns(3)
-    acc = col_a.checkbox("✅ Dossier accepté", value=bool(dossier_data.get("Accepté", False)))
-    date_acc = col_a.date_input("Date", value=pd.to_datetime(dossier_data.get("Date accepté", date.today()), errors="coerce").date() if pd.notna(dossier_data.get("Date accepté", None)) else date.today())
-    ref = col_b.checkbox("❌ Dossier refusé", value=bool(dossier_data.get("Refusé", False)))
-    date_ref = col_b.date_input("Date ", value=pd.to_datetime(dossier_data.get("Date refusé", date.today()), errors="coerce").date() if pd.notna(dossier_data.get("Date refusé", None)) else date.today())
-    ann = col_c.checkbox("⚠️ Dossier annulé", value=bool(dossier_data.get("Annulé", False)))
-    date_ann = col_c.date_input("Date  ", value=pd.to_datetime(dossier_data.get("Date annulé", date.today()), errors="coerce").date() if pd.notna(dossier_data.get("Date annulé", None)) else date.today())
-    rfe = st.checkbox("📄 RFE (Requête complémentaire)", value=bool(dossier_data.get("RFE", False)))
+    acc = col_a.checkbox("✅ Dossier accepté", value=bool(dossier_data.get("Accepté", False)), key=f"acc_{dossier_num}")
+    date_acc = col_a.date_input("Date", value=pd.to_datetime(dossier_data.get("Date accepté", date.today()), errors="coerce").date() if pd.notna(dossier_data.get("Date accepté", None)) else date.today(), key=f"date_acc_{dossier_num}")
+    ref = col_b.checkbox("❌ Dossier refusé", value=bool(dossier_data.get("Refusé", False)), key=f"ref_{dossier_num}")
+    date_ref = col_b.date_input("Date ", value=pd.to_datetime(dossier_data.get("Date refusé", date.today()), errors="coerce").date() if pd.notna(dossier_data.get("Date refusé", None)) else date.today(), key=f"date_ref_{dossier_num}")
+    ann = col_c.checkbox("⚠️ Dossier annulé", value=bool(dossier_data.get("Annulé", False)), key=f"ann_{dossier_num}")
+    date_ann = col_c.date_input("Date  ", value=pd.to_datetime(dossier_data.get("Date annulé", date.today()), errors="coerce").date() if pd.notna(dossier_data.get("Date annulé", None)) else date.today(), key=f"date_ann_{dossier_num}")
+    rfe = st.checkbox("📄 RFE (Requête complémentaire)", value=bool(dossier_data.get("RFE", False)), key=f"rfe_{dossier_num}")
 
     # --- Ligne 7 : Commentaires ---
-    commentaires = st.text_area("🗒️ Commentaires", value=dossier_data.get("Commentaires", ""))
+    commentaires = st.text_area("🗒️ Commentaires", value=dossier_data.get("Commentaires", ""), key=f"com_{dossier_num}")
 
     st.divider()
 
-    if st.button("💾 Enregistrer les modifications", use_container_width=True):
+    if st.button("💾 Enregistrer les modifications", use_container_width=True, key=f"save_{dossier_num}"):
         try:
             # Mise à jour du dataframe
             idx = df_clients.index[(df_clients["Dossier N"].astype(str) == str(dossier_num)) | (df_clients["Nom"].astype(str) == str(nom_client))]

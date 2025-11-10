@@ -1,41 +1,31 @@
 import streamlit as st
-from utils_gdrive_oauth import get_gdrive_service, upload_to_drive, download_from_drive
 import pandas as pd
+from utils_gdrive_oauth import get_gdrive_service
+from utils_gdrive_oauth import upload_to_drive, download_from_drive
 
 def tab_parametres():
-    st.title("⚙️ Paramètres de connexion Google Drive")
+    st.title("⚙️ Paramètres (Google Drive)")
+    st.markdown("Connecte-toi et teste la synchronisation Drive.")
 
-    st.markdown("""
-    Cette page permet de connecter ton application à Google Drive via OAuth2.
-    Une fois connecté, tu pourras sauvegarder et charger ton fichier Excel directement depuis ton Drive.
-    """)
-
-    st.divider()
-
-    # Test de connexion
     if st.button("🔐 Se connecter à Google Drive"):
         try:
             service = get_gdrive_service()
             about = service.about().get(fields="user").execute()
             user = about.get("user", {})
-            st.success(f"✅ Connecté à Google Drive en tant que **{user.get('displayName', 'Inconnu')}** ({user.get('emailAddress', 'email inconnu')})")
+            st.success(f"✅ Connecté en tant que **{user.get('displayName','?')}** ({user.get('emailAddress','?')})")
         except Exception as e:
-            st.error(f"❌ Erreur de connexion : {e}")
+            st.error(f"❌ Erreur OAuth : {e}")
 
     st.divider()
+    st.subheader("📤 Test upload (fichier de test)")
+    if st.button("Uploader 'TestUpload.xlsx'"):
+        df = pd.DataFrame({"Nom":["Alice","Bob"],"Montant":[1000,800]})
+        upload_to_drive({"Test":df}, filename="TestUpload.xlsx")
 
-    # Section test upload
-    st.subheader("📤 Test d’upload vers Google Drive")
-    if st.button("Uploader un fichier de test"):
-        df_test = pd.DataFrame({"Nom": ["Jean", "Marie"], "Montant": [1200, 800]})
-        data_dict = {"Test": df_test}
-        upload_to_drive(data_dict, "TestUpload.xlsx")
-
-    st.divider()
-
-    # Section test download
-    st.subheader("📥 Test de téléchargement depuis Google Drive")
-    if st.button("Télécharger le fichier de test"):
+    st.subheader("📥 Test download (fichier de test)")
+    if st.button("Télécharger 'TestUpload.xlsx'"):
         data = download_from_drive("TestUpload.xlsx")
-        if data:
-            st.write(data["Test"].head())
+        if data and "Test" in data:
+            st.dataframe(data["Test"])
+        else:
+            st.warning("Fichier introuvable sur Drive.")

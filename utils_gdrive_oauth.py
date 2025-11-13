@@ -1,126 +1,133 @@
-import os
-import json
 import io
+import json
+import streamlit as st
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
+from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 
 SCOPES = ["https://www.googleapis.com/auth/drive.file"]
 
-TOKEN_FILE = "token.json"
-CREDENTIALS_FILE = "credentials.json"
 
+# -----------------------------------------------------
+#  SERVICE GOOGLE DRIVE
+# -----------------------------------------------------
+def get_gdrive_service():
+    """Retourne un service Google Drive authentifié."""
+    if "gdrive_token" not in st.secrets:
+        st.error("❌ Aucun token Google Drive trouvé dans les secrets Streamlit.")
+        return None
 
-def load_credentials():
-    """Charge les credentials depuis token.json et credentials.json"""
-    if not os.path.exists(TOKEN_FILE):
-        raise FileNotFoundError("token.json manquant. Exécute generate_token.py")
+    token_data = st.secrets["gdrive_token"]
 
-    with open(TOKEN_FILE, "r") as f:
-        token_data = json.load(f)
-
-    with open(CREDENTIALS_FILE, "r") as f:
-        cred_data = json.load(f)["installed"]
-
-    creds = Credentials(
-        token=token_data.get("token"),
-        refresh_token=token_data.get("refresh_token"),
-        token_uri=cred_data["token_uri"],
-        client_id=cred_data["client_id"],
-        client_secret=cred_data["client_secret"],
-        scopes=SCOPES,
-    )
-    return creds
-
-
-def get_service():
-    """Retourne un service Drive API authentifié"""
-    creds = load_credentials()
-    return build("drive", "v3", credentials=creds)
-
-
-def find_file_id(filename: str):
-    """Retourne l'ID du fichier sur Drive si trouvé"""
-    service = get_service()
-    query = f"name = '{filename}' and trashed = false"
-
-    results = service.files().list(q=query, fields="files(id, name)").execute()
-    files = results.get("files", [])
-
-    return files[0]["id"] if files else None
-
-
-def download_from_drive(filename: str):
-    """Télécharge un fichier Google Drive et renvoie ses bytes"""
     try:
-        file_id = find_file_id(filename)
-        if not file_id:
+        creds = Credentials(
+            token=token_data.get("token"),
+            refresh_token=token_data.get("refresh_token"),
+            client_id=token_data.get("client_id"),
+            client_secret=token_data.get("client_secret"),
+            token_uri="https://oauth2.googleapis.com/token",
+            scopes=SCOPES,
+        )
+    except Exception as e:
+        st.error(f"❌ Impossible de charger les credentials : {e}")
+        return None
+
+    try:
+        service = build("drive", "v3", credentials=creds)
+        return service
+    except Exception as e:
+        st.error(f"❌ Erreur création service Drive : {e}")
+        return None
+
+
+# -----------------------------------------------------
+#  DOWNLOAD
+# -----------------------------------------------------
+def download_from_drive(filename):
+    """Télécharge un fichier Google Drive et retourne son contenu binaire."""
+    service = get_gdrive_service()
+    if not service:
+        return None
+
+    try:
+        results = service.files().list(
+            q=f"name='{filename}' and trashed=false",
+            fields="files(id, name)"
+        ).execute()
+
+        files = results.get("files", [])
+        if not files:
+            st.warning(f"⚠️ Fichier '{filename}' introuvable sur Drive.")
             return None
 
-        service = get_service()
+        file_id = files[0]["id"]
         request = service.files().get_media(fileId=file_id)
 
-        buffer = io.BytesIO()
-        downloader = MediaIoBaseDownload(buffer, request)
+        file_data = io.BytesIO()
+        downloader = MediaIoBaseDownload(file_data, request)
 
         done = False
         while not done:
             _, done = downloader.next_chunk()
 
-        return buffer.getvalue()
+        file_data.seek(0)
+        return file_data.read()
 
     except Exception as e:
-        print("Erreur download_from_drive :", e)
+        st.error(f"❌ Erreur téléchargement Drive : {e}")
         return None
 
 
-def upload_to_drive(file_bytes: bytes, filename: str):
-    """Upload un fichier binaire vers Google Drive (overwrite)"""
+# -----------------------------------------------------
+#  UPLOAD (VERSION SÛRE)
+# -----------------------------------------------------
+def upload_to_drive(data_dict, filename="Clients BL.xlsx"):
+    """Enregistre un fichier Excel sur Google Drive, SAFE MODE."""
+
+    service = get_gdrive_service()
+    if not service:
+        return False
+
     try:
-        service = get_service()
+        # 🔒 Construire le fichier Excel en mémoire
+        output = io.BytesIO()
 
-        file_id = find_file_id(filename)
+        import pandas as pd
 
-        media = MediaIoBaseUpload(io.BytesIO(file_bytes), mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+            for sheet, df in data_dict.items():
 
-        if file_id:
+                # ⚠️ Patch anti-feuille vide invisible
+                if df is None or len(df) == 0:
+                    safe_df = pd.DataFrame({"": []})
+                    safe_df.to_excel(writer, sheet_name=sheet, index=False)
+                else:
+                    df.to_excel(writer, sheet_name=sheet, index=False)
+
+        output.seek(0)
+
+        # -----------------------------------------------------
+        #  Vérifier si le fichier existe déjà
+        # -----------------------------------------------------
+        results = service.files().list(
+            q=f"name='{filename}' and trashed=false",
+            fields="files(id, name)"
+        ).execute()
+
+        media = MediaIoBaseUpload(output, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+        if results.get("files"):
+            # Mise à jour du fichier existant
+            file_id = results["files"][0]["id"]
             service.files().update(fileId=file_id, media_body=media).execute()
         else:
+            # Nouveau fichier
             file_metadata = {"name": filename}
             service.files().create(body=file_metadata, media_body=media).execute()
 
-        print("Upload réussi :", filename)
+        st.success(f"✅ Fichier sauvegardé sur Google Drive : {filename}")
         return True
 
     except Exception as e:
-        print("Erreur upload_to_drive :", e)
+        st.error(f"❌ Erreur lors de la sauvegarde : {e}")
         return False
-
-from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import build
-from google.auth.transport.requests import Request
-import json
-import os
-
-SCOPES = ["https://www.googleapis.com/auth/drive.file"]
-
-def get_gdrive_service():
-    """Charge token.json, rafraîchit si nécessaire et retourne le service Drive."""
-    
-    if not os.path.exists("token.json"):
-        raise FileNotFoundError("token.json manquant — génère le token d’abord.")
-
-    with open("token.json", "r") as f:
-        token_data = json.load(f)
-
-    creds = Credentials.from_authorized_user_info(token_data, SCOPES)
-
-    # Rafraîchissement automatique si expiré
-    if creds and creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-        with open("token.json", "w") as f:
-            f.write(creds.to_json())
-
-    # Retourne l'API Drive
-    return build("drive", "v3", credentials=creds)
-

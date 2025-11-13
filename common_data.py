@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import io
-from utils_gdrive_oauth import get_gdrive_service
 
 MAIN_FILE = "Clients BL.xlsx"
 
@@ -37,10 +36,9 @@ DEFAULT_SHEETS = {
     "Escrow": []
 }
 
-# -------------------------------------------------------
-# LOAD XLSX FROM BYTES
-# -------------------------------------------------------
+
 def load_xlsx(file_bytes):
+    """Charge un fichier XLSX uploadé."""
     try:
         xls = pd.ExcelFile(io.BytesIO(file_bytes))
         data = {}
@@ -50,6 +48,7 @@ def load_xlsx(file_bytes):
                 df = pd.read_excel(xls, sheet_name=sheet)
             else:
                 df = pd.DataFrame(columns=columns)
+
             data[sheet] = df
 
         return data
@@ -59,10 +58,8 @@ def load_xlsx(file_bytes):
         return None
 
 
-# -------------------------------------------------------
-# SAVE LOCALLY (Memory)
-# -------------------------------------------------------
 def save_all_local(data_dict):
+    """Sauvegarde dans session_state sous forme de fichier binaire."""
     try:
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
@@ -80,67 +77,17 @@ def save_all_local(data_dict):
         return False
 
 
-# -------------------------------------------------------
-# SAVE TO GOOGLE DRIVE
-# -------------------------------------------------------
-def save_all(data_dict, filename=MAIN_FILE):
-    """Sauvegarde sur Google Drive si token OK, sinon local uniquement."""
-    service = get_gdrive_service()
-
-    # Export XLSX en mémoire
-    output = io.BytesIO()
-    try:
-        with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-            for sheet, df in data_dict.items():
-                if not isinstance(df, pd.DataFrame) or df.empty:
-                    df = pd.DataFrame({" ": []})
-                df.to_excel(writer, sheet_name=sheet, index=False)
-        output.seek(0)
-    except Exception as e:
-        st.error(f"Erreur conversion XLSX : {e}")
+def save_all():
+    """Sauvegarde simple : met à jour les données et utilise save_all_local."""
+    if "data_xlsx" not in st.session_state:
+        st.error("❌ Impossible de sauvegarder : aucune donnée chargée.")
         return False
 
-    # Si Google Drive est OK → upload
-    if service:
-        try:
-            from googleapiclient.http import MediaIoBaseUpload
-
-            file_id = None
-            search = service.files().list(
-                q=f"name='{filename}' and trashed=false",
-                spaces="drive",
-                fields="files(id)"
-            ).execute()
-
-            if search["files"]:
-                file_id = search["files"][0]["id"]
-
-            media = MediaIoBaseUpload(output, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
-            if file_id:
-                service.files().update(fileId=file_id, media_body=media).execute()
-            else:
-                service.files().create(
-                    body={"name": filename},
-                    media_body=media
-                ).execute()
-
-            return True
-
-        except Exception as e:
-            st.error(f"Erreur sauvegarde Google Drive : {e}")
-            st.warning("Sauvegarde locale uniquement.")
-            return save_all_local(data_dict)
-
-    # Pas de token Google → sauvegarde locale
-    return save_all_local(data_dict)
+    return save_all_local(st.session_state["data_xlsx"])
 
 
-# -------------------------------------------------------
-# ENSURE FILE LOADED
-# -------------------------------------------------------
-def ensure_loaded(filename=MAIN_FILE):
-    """Charge le fichier dans session_state si pas encore fait."""
+def ensure_loaded(filename):
+    """Renvoie le fichier chargé ou None si pas encore importé."""
     if "data_xlsx" in st.session_state:
         return st.session_state["data_xlsx"]
 

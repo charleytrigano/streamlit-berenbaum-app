@@ -1,52 +1,65 @@
-# tab_fichiers.py
 import streamlit as st
 import pandas as pd
-from common_data import ensure_loaded, load_xlsx, MAIN_FILE, save_all_local
-
+from common_data import load_xlsx, save_all_local, MAIN_FILE
 
 def tab_fichiers():
-    st.header("📄 Fichiers")
+    st.header("📄 Gestion des fichiers")
 
-    # Charger les données existantes (depuis session ou fichier du repo)
-    data = ensure_loaded(MAIN_FILE)
-
-    st.markdown(f"**Fichier principal actuel :** `{MAIN_FILE}`")
-
-    st.markdown("---")
-    st.subheader("📥 Importer un fichier Excel")
-
-    uploaded = st.file_uploader(
-        "Choisis un fichier Excel (.xlsx) à utiliser pour cette session",
+    # =============================
+    # 1. UPLOAD DU FICHIER
+    # =============================
+    uploaded_file = st.file_uploader(
+        "Importer un fichier Excel (.xlsx)",
         type=["xlsx"],
-        key="file_uploader_main",
+        key="file_upload"
     )
 
-    if uploaded is not None:
-        try:
-            xls = pd.ExcelFile(uploaded)
-            new_data = {sheet: pd.read_excel(xls, sheet_name=sheet) for sheet in xls.sheet_names}
-            st.session_state["data_xlsx"] = new_data
-            data = new_data
-            st.success("✅ Fichier chargé en mémoire pour cette session.")
-        except Exception as e:
-            st.error(f"❌ Erreur de lecture du fichier : {e}")
+    if uploaded_file:
+        file_bytes = uploaded_file.read()
+        data = load_xlsx(file_bytes)
 
-    # Aperçu des feuilles
-    if not data:
-        st.warning("⚠️ Aucune donnée chargée. Charge un fichier Excel ci-dessus.")
+        if data:
+            st.session_state["data_xlsx"] = data
+            st.success(f"✅ Fichier **{uploaded_file.name}** chargé avec succès !")
+
+            if st.button("💾 Sauvegarder localement (mémoire)"):
+                ok = save_all_local(st.session_state["data_xlsx"])
+                if ok:
+                    st.success("✨ Sauvegarde locale effectuée.")
+
+    st.markdown("---")
+
+    # =============================
+    # 2. AFFICHAGE DES FEUILLES
+    # =============================
+    st.subheader("📑 Feuilles détectées")
+
+    if "data_xlsx" not in st.session_state:
+        st.info("Aucun fichier chargé pour le moment.")
         return
 
-    sheets = list(data.keys())
-    st.markdown("**Feuilles détectées dans le fichier :** " + ", ".join(f"`{s}`" for s in sheets))
+    data = st.session_state["data_xlsx"]
+    sheet_names = list(data.keys())
 
-    # Aperçu rapide de la feuille Clients si présente
-    if "Clients" in data:
-        st.markdown("### 👀 Aperçu de la feuille `Clients`")
-        st.dataframe(data["Clients"].head(20), use_container_width=True)
-    else:
-        st.warning("⚠️ La feuille `Clients` n'existe pas dans ce fichier.")
+    st.write("Feuilles disponibles :", ", ".join(sheet_names))
 
-    # Bouton de sauvegarde locale (dans le conteneur)
+    # Aperçu rapide
+    selected_sheet = st.selectbox("Afficher une feuille :", sheet_names)
+
+    df = data[selected_sheet]
+
+    st.write(f"### Aperçu de **{selected_sheet}**")
+    st.dataframe(df)
+
     st.markdown("---")
-    if st.button("💾 Sauvegarder l'état actuel dans le fichier local", use_container_width=True):
-        save_all_local(MAIN_FILE)
+
+    # =============================
+    # 3. EXPORT DU FICHIER EN LOCAL
+    # =============================
+    if "last_saved_file" in st.session_state:
+        st.download_button(
+            label="⬇️ Télécharger la dernière sauvegarde",
+            data=st.session_state["last_saved_file"],
+            file_name=MAIN_FILE,
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )

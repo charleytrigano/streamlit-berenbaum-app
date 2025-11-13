@@ -2,9 +2,8 @@ import streamlit as st
 import pandas as pd
 from utils_gdrive_oauth import download_from_drive, upload_to_drive
 
-MAIN_FILE = "Clients BL.xlsx"   # Nom du fichier principal sur Google Drive
+MAIN_FILE = "Clients BL.xlsx"
 
-# mapping des colonnes pour uniformiser partout
 column_map = {
     "Dossier N": "Dossier N",
     "Nom": "Nom",
@@ -31,50 +30,40 @@ column_map = {
     "Escrow": "Escrow"
 }
 
-
 def ensure_loaded(filename: str):
-    """
-    Charge le fichier XLSX depuis Google Drive ou depuis session_state.
-    Retourne un dict {sheet_name: dataframe}
-    """
-
-    # si déjà chargé en session, renvoyer directement
     if "data_xlsx" in st.session_state:
         return st.session_state["data_xlsx"]
 
-    # essayer de télécharger depuis Drive
     content = download_from_drive(filename)
-    if content is not None:
+    if content:
         try:
-            excel_data = pd.read_excel(content, sheet_name=None, engine="openpyxl")
-            st.session_state["data_xlsx"] = excel_data
-            return excel_data
+            data = pd.read_excel(content, sheet_name=None, engine="openpyxl")
+            st.session_state["data_xlsx"] = data
+            return data
         except Exception as e:
             st.error(f"Erreur lecture XLSX : {e}")
 
-    # sinon, charger un fichier vide par défaut
+    # fallback
     empty = {
         "Clients": pd.DataFrame(columns=list(column_map.values())),
         "Visa": pd.DataFrame(),
         "ComptaCli": pd.DataFrame(),
         "Escrow": pd.DataFrame(),
     }
-
     st.session_state["data_xlsx"] = empty
     return empty
 
-
-def save_all(data: dict, filename: str = MAIN_FILE):
-    """
-    Sauvegarde le fichier XLSX complet sur Google Drive
-    """
+def save_all(data: dict = None, filename: str = MAIN_FILE):
     try:
         import io
 
+        if data is None:
+            data = st.session_state.get("data_xlsx", {})
+
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-            for sheet_name, df in data.items():
-                df.to_excel(writer, index=False, sheet_name=sheet_name)
+            for sheet, df in data.items():
+                df.to_excel(writer, index=False, sheet_name=sheet)
 
         upload_to_drive(buffer.getvalue(), filename)
         return True

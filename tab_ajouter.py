@@ -1,122 +1,86 @@
 import streamlit as st
 import pandas as pd
-from datetime import date
-import dropbox
-import io
-import os
-
-# ===== CONFIGURATION DROPBOX =====
-DROPBOX_TOKEN = os.getenv("DROPBOX_TOKEN")  # ⚠️ à définir dans Streamlit Cloud (Secrets)
-DROPBOX_PATH = "/Clients-BL.xlsx"
+from common_data import column_map, save_all, MAIN_FILE
 
 def tab_ajouter():
-    """Ajout d'un dossier client."""
     st.header("➕ Ajouter un dossier")
 
-    if "data_xlsx" not in st.session_state or not st.session_state["data_xlsx"]:
-        st.warning("⚠️ Chargez d'abord le fichier Excel via l’onglet 📄 Fichiers.")
-        return
+    data = st.session_state.get("data_xlsx", {})
+    df = data.get("Clients", pd.DataFrame(columns=column_map.values()))
 
-    data = st.session_state["data_xlsx"]
-    if "Clients" not in data or "Visa" not in data:
-        st.error("❌ Les feuilles 'Clients' et 'Visa' sont nécessaires.")
-        return
+    # Détection du prochain numéro de dossier
+    if "Dossier N" in df.columns and not df["Dossier N"].dropna().empty:
+        next_num = int(df["Dossier N"].max()) + 1
+    else:
+        next_num = 1
 
-    df_clients = data["Clients"].copy()
-    df_visa = data["Visa"].copy()
+    st.subheader(f"Nouveau Dossier : **{next_num}**")
 
-    # === LIGNE 1 ===
-    st.subheader("🧾 Informations principales")
-    c1, c2, c3 = st.columns(3)
-    dossier_n = c1.text_input("Dossier N")
-    nom_client = c2.text_input("Nom du client")
-    date_creation = c3.date_input("Date (création)", value=date.today())
+    with st.form("ajouter_formulaire"):
+        col1, col2 = st.columns(2)
 
-    # === LIGNE 2 ===
-    st.subheader("📂 Classification et visa")
-    col1, col2, col3 = st.columns(3)
+        nom = col1.text_input("Nom")
+        date = col2.date_input("Date")
 
-    categories = sorted(df_visa["Catégorie"].dropna().unique().tolist()) if "Catégorie" in df_visa else []
-    selected_cat = col1.selectbox("Catégorie", options=[""] + categories)
+        # Catégorie / Sous-catégorie / Visa
+        col3, col4, col5 = st.columns(3)
 
-    souscats = []
-    if selected_cat and "Sous-catégorie" in df_visa:
-        souscats = sorted(df_visa[df_visa["Catégorie"] == selected_cat]["Sous-catégorie"].dropna().unique().tolist())
-    selected_souscat = col2.selectbox("Sous-catégorie", options=[""] + souscats)
+        categories_existantes = sorted(df["Catégories"].dropna().unique().tolist())
+        cat = col3.selectbox("Catégorie", [""] + categories_existantes)
 
-    visas = sorted(df_visa.columns[3:].tolist())  # lecture de la 1ère ligne (entêtes de visas)
-    selected_visa = col3.selectbox("Visa", options=[""] + visas)
+        sous_cat_existants = sorted(df["Sous-catégorie"].dropna().unique().tolist())
+        sous_cat = col4.selectbox("Sous-catégorie", [""] + sous_cat_existants)
 
-    # === LIGNE 3 ===
-    st.subheader("💵 Informations financières")
-    c4, c5, c6 = st.columns(3)
-    montant_hono = c4.number_input("Montant honoraires (US $)", min_value=0.0, step=100.0, format="%.2f")
-    date_acompte1 = c5.date_input("Date Acompte 1", value=date.today())
-    acompte1 = c6.number_input("Acompte 1 (US $)", min_value=0.0, step=100.0, format="%.2f")
+        visa_existants = sorted(df["Visa"].dropna().unique().tolist())
+        visa = col5.selectbox("Visa", [""] + visa_existants)
 
-    # === LIGNE 4 ===
-    st.subheader("💳 Mode de paiement")
-    col_mp1, col_mp2, col_mp3, col_mp4 = st.columns(4)
-    mode_cheque = col_mp1.checkbox("Chèque")
-    mode_virement = col_mp2.checkbox("Virement")
-    mode_cb = col_mp3.checkbox("Carte bancaire")
-    mode_venmo = col_mp4.checkbox("Venmo")
+        # Montants
+        col6, col7 = st.columns(2)
+        montant_h = col6.number_input("Montant honoraires (US $)", min_value=0.0, step=10.0)
+        autres_frais = col7.number_input("Autres frais (US $)", min_value=0.0, step=1.0)
 
-    mode_paiement = []
-    if mode_cheque: mode_paiement.append("Chèque")
-    if mode_virement: mode_paiement.append("Virement")
-    if mode_cb: mode_paiement.append("Carte bancaire")
-    if mode_venmo: mode_paiement.append("Venmo")
-    mode_paiement_str = ", ".join(mode_paiement)
+        # Acompte
+        col8, col9, col10 = st.columns(3)
+        acompte1 = col8.number_input("Acompte 1", min_value=0.0, step=10.0)
+        date_acompte1 = col9.date_input("Date Acompte 1")
+        mode_acompte1 = col10.text_input("Mode Paiement 1")
 
-    # === LIGNE 5 ===
-    st.subheader("🛡️ Escrow")
-    escrow = st.checkbox("Envoyer en Escrow")
+        escrow = st.checkbox("Escrow ?")
 
-    # === LIGNE 6 ===
-    st.subheader("📝 Commentaires")
-    commentaires = st.text_area("Commentaires")
+        submitted = st.form_submit_button("Enregistrer")
 
-    st.markdown("---")
-
-    # === ENREGISTREMENT ===
-    if st.button("💾 Enregistrer le dossier"):
-        # Crée une nouvelle ligne
+    if submitted:
         new_row = {
-            "Dossier N": dossier_n,
-            "Nom": nom_client,
-            "Date création": date_creation.strftime("%Y-%m-%d"),
-            "Catégories": selected_cat,
-            "Sous-catégories": selected_souscat,
-            "Visa": selected_visa,
-            "Montant honoraires (US $)": montant_hono,
-            "Date Acompte 1": date_acompte1.strftime("%Y-%m-%d"),
+            "Dossier N": next_num,
+            "Nom": nom,
+            "Date": pd.to_datetime(date),
+            "Catégories": cat,
+            "Sous-catégorie": sous_cat,
+            "Visa": visa,
+            "Montant honoraires (US $)": montant_h,
+            "Autres frais (US $)": autres_frais,
             "Acompte 1": acompte1,
-            "Mode de paiement": mode_paiement_str,
+            "Date Acompte 1": pd.to_datetime(date_acompte1),
+            "Mode Paiement 1": mode_acompte1,
+            "Acompte 2": 0,
+            "Date Acompte 2": pd.NaT,
+            "Mode Paiement 2": "",
+            "Acompte 3": 0,
+            "Date Acompte 3": pd.NaT,
+            "Mode Paiement 3": "",
+            "Acompte 4": 0,
+            "Date Acompte 4": pd.NaT,
+            "Mode Paiement 4": "",
+            "Dossier Envoye": "",
+            "Date Envoye": pd.NaT,
             "Escrow": "Oui" if escrow else "Non",
-            "Commentaires": commentaires
         }
 
-        df_clients = pd.concat([df_clients, pd.DataFrame([new_row])], ignore_index=True)
+        df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+        st.session_state["data_xlsx"]["Clients"] = df
 
-        # Sauvegarde Dropbox (si token dispo)
-        try:
-            if DROPBOX_TOKEN:
-                dbx = dropbox.Dropbox(DROPBOX_TOKEN)
-                with io.BytesIO() as buffer:
-                    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-                        for sheet_name, sheet_df in data.items():
-                            if sheet_name == "Clients":
-                                df_clients.to_excel(writer, sheet_name=sheet_name, index=False)
-                            else:
-                                sheet_df.to_excel(writer, sheet_name=sheet_name, index=False)
-                    buffer.seek(0)
-                    dbx.files_upload(buffer.read(), DROPBOX_PATH, mode=dropbox.files.WriteMode.overwrite)
-                st.success("✅ Dossier ajouté et sauvegardé sur Dropbox.")
-            else:
-                st.warning("⚠️ Aucun token Dropbox trouvé — le fichier n’a pas été sauvegardé en ligne.")
-        except Exception as e:
-            st.error(f"❌ Erreur lors de la sauvegarde Dropbox : {e}")
+        if save_all(st.session_state["data_xlsx"], MAIN_FILE):
+            st.success("Dossier ajouté et sauvegardé sur Drive ✔")
+        else:
+            st.error("Erreur lors de la sauvegarde.")
 
-        st.success("✅ Dossier ajouté localement.")
-        st.session_state["data_xlsx"]["Clients"] = df_clients

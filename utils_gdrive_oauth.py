@@ -95,3 +95,32 @@ def upload_to_drive(file_bytes: bytes, filename: str):
     except Exception as e:
         print("Erreur upload_to_drive :", e)
         return False
+
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
+from google.auth.transport.requests import Request
+import json
+import os
+
+SCOPES = ["https://www.googleapis.com/auth/drive.file"]
+
+def get_gdrive_service():
+    """Charge token.json, rafraîchit si nécessaire et retourne le service Drive."""
+    
+    if not os.path.exists("token.json"):
+        raise FileNotFoundError("token.json manquant — génère le token d’abord.")
+
+    with open("token.json", "r") as f:
+        token_data = json.load(f)
+
+    creds = Credentials.from_authorized_user_info(token_data, SCOPES)
+
+    # Rafraîchissement automatique si expiré
+    if creds and creds.expired and creds.refresh_token:
+        creds.refresh(Request())
+        with open("token.json", "w") as f:
+            f.write(creds.to_json())
+
+    # Retourne l'API Drive
+    return build("drive", "v3", credentials=creds)
+

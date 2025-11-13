@@ -2,52 +2,83 @@ import streamlit as st
 import pandas as pd
 from utils_gdrive_oauth import download_from_drive, upload_to_drive
 
-# --------------------------------------------------------
-# Nom du fichier principal
-# --------------------------------------------------------
-MAIN_FILE = "Clients BL.xlsx"
+MAIN_FILE = "Clients BL.xlsx"   # Nom du fichier principal sur Google Drive
 
-# --------------------------------------------------------
-# Chargement des données depuis Google Drive
-# --------------------------------------------------------
-def ensure_loaded(filename=MAIN_FILE):
+# mapping des colonnes pour uniformiser partout
+column_map = {
+    "Dossier N": "Dossier N",
+    "Nom": "Nom",
+    "Date": "Date",
+    "Categories": "Catégories",
+    "Sous-categorie": "Sous-catégorie",
+    "Visa": "Visa",
+    "Montant honoraires (US $)": "Montant honoraires (US $)",
+    "Autres frais (US $)": "Autres frais (US $)",
+    "Acompte 1": "Acompte 1",
+    "Date Acompte 1": "Date Acompte 1",
+    "Mode Paiement 1": "Mode Paiement 1",
+    "Acompte 2": "Acompte 2",
+    "Date Acompte 2": "Date Acompte 2",
+    "Mode Paiement 2": "Mode Paiement 2",
+    "Acompte 3": "Acompte 3",
+    "Date Acompte 3": "Date Acompte 3",
+    "Mode Paiement 3": "Mode Paiement 3",
+    "Acompte 4": "Acompte 4",
+    "Date Acompte 4": "Date Acompte 4",
+    "Mode Paiement 4": "Mode Paiement 4",
+    "Dossier Envoye": "Dossier Envoye",
+    "Date Envoye": "Date Envoye",
+    "Escrow": "Escrow"
+}
+
+
+def ensure_loaded(filename: str):
     """
-    Charge le fichier Excel depuis Drive si pas déjà en mémoire.
+    Charge le fichier XLSX depuis Google Drive ou depuis session_state.
+    Retourne un dict {sheet_name: dataframe}
     """
+
+    # si déjà chargé en session, renvoyer directement
     if "data_xlsx" in st.session_state:
         return st.session_state["data_xlsx"]
 
-    try:
-        content = download_from_drive(filename)
-        df_dict = pd.read_excel(content, sheet_name=None)
-        st.session_state["data_xlsx"] = df_dict
-        return df_dict
-    except Exception as e:
-        st.error(f"❌ Impossible de charger {filename} : {e}")
-        return {}
+    # essayer de télécharger depuis Drive
+    content = download_from_drive(filename)
+    if content is not None:
+        try:
+            excel_data = pd.read_excel(content, sheet_name=None, engine="openpyxl")
+            st.session_state["data_xlsx"] = excel_data
+            return excel_data
+        except Exception as e:
+            st.error(f"Erreur lecture XLSX : {e}")
 
-# --------------------------------------------------------
-# Sauvegarde vers Google Drive
-# --------------------------------------------------------
-def save_all(data_dict=None):
+    # sinon, charger un fichier vide par défaut
+    empty = {
+        "Clients": pd.DataFrame(columns=list(column_map.values())),
+        "Visa": pd.DataFrame(),
+        "ComptaCli": pd.DataFrame(),
+        "Escrow": pd.DataFrame(),
+    }
+
+    st.session_state["data_xlsx"] = empty
+    return empty
+
+
+def save_all(data: dict, filename: str = MAIN_FILE):
     """
-    Sauvegarde toutes les feuilles Excel dans Google Drive.
+    Sauvegarde le fichier XLSX complet sur Google Drive
     """
-    if data_dict is None:
-        data_dict = st.session_state.get("data_xlsx", {})
-
     try:
-        output = pd.ExcelWriter("temp.xlsx", engine="openpyxl")
+        import io
 
-        for sheet, df in data_dict.items():
-            df.to_excel(output, index=False, sheet_name=sheet)
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+            for sheet_name, df in data.items():
+                df.to_excel(writer, index=False, sheet_name=sheet_name)
 
-        output.close()
-
-        with open("temp.xlsx", "rb") as f:
-            upload_to_drive(f, MAIN_FILE)
-
-        st.success("✅ Sauvegarde réussie sur Google Drive.")
+        upload_to_drive(buffer.getvalue(), filename)
+        return True
 
     except Exception as e:
         st.error(f"❌ Erreur lors de la sauvegarde : {e}")
+        return False

@@ -3,7 +3,7 @@ pandas
 openpyxl
 xlsxwriter
 python-dateutil
-plotly
+plotly==5.22.00
 google-auth
 google-auth-oauthlib
 google-auth-httplib2

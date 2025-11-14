@@ -1,47 +1,57 @@
 import streamlit as st
 import pandas as pd
-from common_data import ensure_loaded, MAIN_FILE
-
 
 def tab_escrow():
+    st.header("🛡️ Escrow")
 
-    st.header("🛡️ Dossiers en Escrow")
-
-    data = ensure_loaded(MAIN_FILE)
-    if data is None:
-        st.warning("Aucun fichier chargé.")
+    if "data_xlsx" not in st.session_state or st.session_state["data_xlsx"] is None:
+        st.warning("Fichier non chargé — veuillez l'importer via l’onglet 📄 Fichiers.")
         return
 
-    df = data["Clients"].copy()
+    df_clients = st.session_state["data_xlsx"].get("Clients")
 
-    # ------------ Normalisation colonnes numériques ------------
-    def to_float(x):
-        try:
-            return float(str(x).replace(",", ".").strip())
-        except:
-            return 0.0
+    if df_clients is None:
+        st.error("La feuille 'Clients' est manquante dans le fichier Excel.")
+        return
 
-    df["Montant honoraires (US $)"] = df["Montant honoraires (US $)"].map(to_float)
-    df["Acompte 1"] = df["Acompte 1"].map(to_float)
+    # ---- NORMALISATION DE LA COLONNE ESCROW ----
+    if "Escrow" not in df_clients.columns:
+        st.error("La colonne 'Escrow' est absente du fichier Excel.")
+        return
 
-    # ------------ Normalisation Escrow ------------
-    def to_bool(x):
-        x = str(x).strip().lower()
-        return x in ["1", "true", "oui", "yes", "y"]
-    
-    df["Escrow"] = df["Escrow"].map(to_bool)
+    # Convertir toute valeur Excel en vrai booléen
+    def to_bool(v):
+        if isinstance(v, bool):
+            return v
+        if isinstance(v, (int, float)):
+            return v == 1
+        if isinstance(v, str):
+            return v.strip().lower() in ["true", "vrai", "1", "yes", "oui"]
+        return False
 
-    # ------------ Règles Escrow ------------
-    condition = (
-        (df["Escrow"] == True) |
-        ((df["Acompte 1"] > 0) & (df["Montant honoraires (US $)"] == 0))
-    )
+    df_clients["Escrow"] = df_clients["Escrow"].apply(to_bool)
 
-    df_escrow = df[condition]
+    # ---- CONDITION D'AFFICHAGE DES DOSSIERS ESCROW ----
+    df_escrow = df_clients[
+        (df_clients["Escrow"] == True)
+        | (
+            pd.to_numeric(df_clients["Acompte 1"], errors="coerce").fillna(0) > 0
+        ) & (
+            pd.to_numeric(df_clients["Montant honoraires (US $)"], errors="coerce").fillna(0) == 0
+        )
+    ]
 
+    # ---- SI AUCUN DOSSIER ----
     if df_escrow.empty:
         st.info("Aucun dossier en Escrow pour le moment.")
         return
 
-    st.subheader("📋 Liste des dossiers en Escrow")
-    st.dataframe(df_escrow, use_container_width=True)
+    # ---- AFFICHAGE ----
+    st.subheader("Dossiers en Escrow")
+
+    montant_total = df_escrow["Acompte 1"].fillna(0).sum()
+
+    st.metric("Montant total", f"{montant_total:,.2f} $")
+
+    st.dataframe(df_escrow.reset_index(drop=True))
+

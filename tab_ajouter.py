@@ -48,6 +48,8 @@ def tab_ajouter():
         date_acompte1 = st.date_input("Date Acompte 1")
 
     escrow = st.checkbox("Mettre le dossier en Escrow")
+    "Escrow": bool(escrow),
+
 
     if st.button("💾 Enregistrer le dossier"):
         new_row = {

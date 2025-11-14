@@ -1,111 +1,45 @@
 import streamlit as st
 import pandas as pd
-from datetime import date
-from common_data import ensure_loaded, save_all, MAIN_FILE
+
+from common_data import ensure_loaded, MAIN_FILE
 
 
-# Colonnes attendues dans la feuille Escrow
-ESCROW_COLS = [
-    "Dossier N",
-    "Nom",
-    "Montant",
-    "Date envoi",
-    "Etat",
-    "Date reclamation",
-]
+def _to_float(s: pd.Series) -> pd.Series:
+    """Convertit en float, NaN -> 0."""
+    return pd.to_numeric(s, errors="coerce").fillna(0.0)
 
 
-def _ensure_escrow_sheet(data: dict) -> pd.DataFrame:
-    """S'assure que la feuille Escrow existe et contient au moins les colonnes nécessaires."""
-    if "Escrow" not in data or not isinstance(data["Escrow"], pd.DataFrame):
-        df_esc = pd.DataFrame(columns=ESCROW_COLS)
-        data["Escrow"] = df_esc
-        return df_esc
-
-    df_esc = data["Escrow"].copy()
-
-    # Ajout des colonnes manquantes
-    for col in ESCROW_COLS:
-        if col not in df_esc.columns:
-            df_esc[col] = pd.NA
-
-    # On garde toutes les colonnes existantes mais on s'assure que celles qu'on utilise sont présentes
-    data["Escrow"] = df_esc
-    return df_esc
+def _is_truthy(v) -> bool:
+    """Interprète 1 / x / true / oui / date non vide comme True."""
+    if pd.isna(v):
+        return False
+    if isinstance(v, (int, float)) and v != 0:
+        return True
+    s = str(v).strip().lower()
+    if not s:
+        return False
+    # valeur textuelle
+    if s in {"1", "true", "vrai", "oui", "y", "x"}:
+        return True
+    # une date écrite (ex: 2024-10-01) → True
+    return True if any(c.isdigit() for c in s) and "-" in s else False
 
 
-def _auto_fill_from_clients(df_clients: pd.DataFrame, df_escrow: pd.DataFrame) -> pd.DataFrame:
-    """
-    Ajoute automatiquement dans Escrow les dossiers qui ont :
-      - Acompte 1 > 0
-      - Montant honoraires (US $) == 0
-    sans dupliquer ceux déjà présents.
-    """
-    if df_clients.empty:
-        return df_escrow
-
-    acompte1 = pd.to_numeric(df_clients.get("Acompte 1", 0), errors="coerce").fillna(0)
-    honoraires = pd.to_numeric(df_clients.get("Montant honoraires (US $)", 0), errors="coerce").fillna(0)
-
-    mask = (acompte1 > 0) & (honoraires == 0)
-    auto_df = df_clients[mask].copy()
-    if auto_df.empty:
-        return df_escrow
-
-    # Dossiers déjà en Escrow
-    existing_ids = set(df_escrow["Dossier N"].astype(str).dropna().tolist())
-
-    rows_to_add = []
-    for _, row in auto_df.iterrows():
-        did = str(row.get("Dossier N", "")).strip()
-        if not did or did in existing_ids:
-            continue
-
-        montant_val = pd.to_numeric(row.get("Acompte 1", 0), errors="coerce")
-        if pd.isna(montant_val):
-            montant_val = 0.0
-
-        rows_to_add.append(
-            {
-                "Dossier N": row.get("Dossier N", ""),
-                "Nom": row.get("Nom", ""),
-                "Montant": float(montant_val),
-                "Date envoi": pd.NaT,
-                "Etat": "",
-                "Date reclamation": pd.NaT,
-            }
-        )
-
-    if rows_to_add:
-        df_add = pd.DataFrame(rows_to_add, columns=ESCROW_COLS)
-        df_escrow = pd.concat([df_escrow, df_add], ignore_index=True)
-
-    return df_escrow
-
-
-def _format_dates_for_display(df: pd.DataFrame, cols) -> pd.DataFrame:
-    """Formate les dates en AAAA-MM-JJ (sans heure) pour l'affichage."""
-    df = df.copy()
-    for c in cols:
-        if c in df.columns:
-            df[c] = (
-                pd.to_datetime(df[c], errors="coerce")
-                .dt.strftime("%Y-%m-%d")
-                .fillna("")
-            )
-    return df
-
-
-def _format_amount(value: float) -> str:
-    """Format numérique : ### ###.## $"""
+def _fmt_amount(v) -> str:
+    """Format 12345.6 -> 12 345.60 $"""
     try:
-        v = float(value)
+        v = float(v)
     except Exception:
-        v = 0.0
-    txt = f"{v:,.2f} $"
-    # remplace les séparateurs en style FR : espace pour milliers, virgule pour décimales
-    txt = txt.replace(",", "X").replace(".", ",").replace("X", " ")
-    return txt
+        return ""
+    s = f"{v:,.2f}"          # 12,345.60
+    s = s.replace(",", " ")  # 12 345.60
+    return s + " $"
+
+
+def _fmt_date_col(series: pd.Series) -> pd.Series:
+    """Convertit en texte AAAA-MM-JJ, vide si NaT."""
+    dt = pd.to_datetime(series, errors="coerce")
+    return dt.dt.strftime("%Y-%m-%d").fillna("")
 
 
 def tab_escrow():
@@ -113,101 +47,189 @@ def tab_escrow():
 
     data = ensure_loaded(MAIN_FILE)
     if data is None:
-        st.warning("⚠️ Aucune donnée. Importe le fichier via l’onglet 📂 Fichiers.")
+        st.warning("Fichier non chargé — importe d’abord ton Excel via l’onglet **📄 Fichiers**.")
         return
 
+    # --- Feuilles de base ---
     df_clients = data.get("Clients", pd.DataFrame())
-    df_escrow = _ensure_escrow_sheet(data)
+    df_escrow_sheet = data.get("Escrow", pd.DataFrame())
 
-    # ------------------------------------------------------------------
-    # 1) Compléter automatiquement Escrow à partir des dossiers Clients
-    # ------------------------------------------------------------------
-    df_escrow_before = df_escrow.copy()
-    df_escrow = _auto_fill_from_clients(df_clients, df_escrow)
-
-    # Si on a ajouté des lignes, on sauvegarde
-    if len(df_escrow) != len(df_escrow_before):
-        data["Escrow"] = df_escrow
-        save_all()
-
-    # ------------------------------------------------------------------
-    # 2) KPI : nombre de dossiers + montant total
-    # ------------------------------------------------------------------
-    montant_total = pd.to_numeric(df_escrow.get("Montant", 0), errors="coerce").fillna(0).sum()
-    nb_dossiers = len(df_escrow)
-
-    col_k1, col_k2 = st.columns(2)
-    with col_k1:
-        st.metric("Nombre de dossiers en Escrow", nb_dossiers)
-    with col_k2:
-        st.metric("Montant total en Escrow", _format_amount(montant_total))
-
-    st.markdown("---")
-
-    # ------------------------------------------------------------------
-    # 3) Tables : Tous / À réclamer / Réclamés
-    # ------------------------------------------------------------------
-    if df_escrow.empty:
-        st.info("Aucun dossier en Escrow pour le moment.")
+    if df_clients.empty:
+        st.info("La feuille **Clients** est vide. Aucun dossier en Escrow.")
         return
 
-    # Pour l'affichage : dates format AAAA-MM-JJ
-    display_df = _format_dates_for_display(df_escrow, ["Date envoi", "Date reclamation"])
+    # Sécurité : s'assurer que les colonnes de base existent
+    for col in [
+        "Dossier N",
+        "Nom",
+        "Montant honoraires (US $)",
+        "Acompte 1",
+        "Escrow",
+        "Dossier envoye",
+        "Dossier accepte",
+        "Dossier refuse",
+        "Dossier annule",
+        "RFE",
+        "Date RFE",
+    ]:
+        if col not in df_clients.columns:
+            df_clients[col] = pd.NA
 
-    # Tous les dossiers
-    st.subheader("📋 Tous les dossiers en Escrow")
-    st.dataframe(display_df[ESCROW_COLS], use_container_width=True)
+    # --- Normalisation des montants ---
+    honoraires = _to_float(df_clients["Montant honoraires (US $)"])
+    acompte1 = _to_float(df_clients["Acompte 1"])
 
-    # À réclamer : Date envoi renseignée ET Date reclamation vide
-    df_a_reclamer = display_df[
-        (display_df["Date envoi"] != "") & (display_df["Date reclamation"] == "")
-    ]
+    # --- Colonne Escrow "cochée" (1, x, oui, date, etc.) ---
+    esc_col = df_clients["Escrow"]
+    esc_checked = esc_col.map(_is_truthy)
 
-    st.subheader("📮 Dossiers envoyés – à réclamer")
-    if df_a_reclamer.empty:
-        st.info("Aucun dossier à réclamer.")
+    # --- Condition automatique : Acompte 1 > 0 et honoraires == 0 ---
+    esc_auto = (acompte1 > 0) & (honoraires == 0)
+
+    mask_escrow = esc_checked | esc_auto
+    df_candidates = df_clients[mask_escrow].copy()
+
+    if df_candidates.empty:
+        st.success("Aucun dossier en Escrow actuellement. 🎉")
+        return
+
+    # --- Normalisation des IDs pour pouvoir joindre avec la feuille Escrow ---
+    def _norm_id(s: pd.Series) -> pd.Series:
+        return pd.to_numeric(s, errors="coerce").astype("Int64")
+
+    df_candidates["_id_"] = _norm_id(df_candidates["Dossier N"])
+
+    if not df_escrow_sheet.empty:
+        # On s'assure que les colonnes existent
+        for col in ["Dossier N", "Montant", "Date envoi", "Etat", "Date reclamation"]:
+            if col not in df_escrow_sheet.columns:
+                df_escrow_sheet[col] = pd.NA
+
+        df_escrow_sheet = df_escrow_sheet.copy()
+        df_escrow_sheet["_id_"] = _norm_id(df_escrow_sheet["Dossier N"])
+
+        df_esc_merge = df_escrow_sheet[["_id_", "Montant", "Date envoi", "Etat", "Date reclamation"]]
     else:
-        st.dataframe(df_a_reclamer[ESCROW_COLS], use_container_width=True)
+        df_esc_merge = pd.DataFrame(columns=["_id_", "Montant", "Date envoi", "Etat", "Date reclamation"])
 
-    # Réclamés : Date reclamation renseignée
-    df_reclames = display_df[display_df["Date reclamation"] != ""]
+    merged = pd.merge(
+        df_candidates,
+        df_esc_merge,
+        on="_id_",
+        how="left",
+        suffixes=("", "_esc")
+    )
 
-    st.subheader("✅ Dossiers réclamés")
-    if df_reclames.empty:
-        st.info("Aucun dossier marqué comme réclamé.")
-    else:
-        st.dataframe(df_reclames[ESCROW_COLS], use_container_width=True)
+    # --- Montant Escrow = Montant de la feuille Escrow, sinon Acompte 1 ---
+    merged["Montant_Escrow"] = _to_float(merged.get("Montant", pd.Series(dtype=float)))
+    mask_empty_montant = merged["Montant_Escrow"] == 0
+    merged.loc[mask_empty_montant, "Montant_Escrow"] = acompte1.loc[merged.index][mask_empty_montant]
+
+    total_montant = float(merged["Montant_Escrow"].sum())
+
+    # ===================== KPIs =====================
+    k1, k2 = st.columns(2)
+    k1.metric("Nombre de dossiers en Escrow", int(len(merged)))
+    k2.metric("Montant total en Escrow", _fmt_amount(total_montant))
 
     st.markdown("---")
 
-    # ------------------------------------------------------------------
-    # 4) Marquer un dossier comme réclamé
-    # ------------------------------------------------------------------
-    st.subheader("🖊️ Marquer un dossier comme réclamé")
+    # ===================== TABLEAU PRINCIPAL =====================
+    st.subheader("📋 Dossiers en Escrow")
 
-    col1, col2 = st.columns([1, 1])
-    with col1:
-        num = st.text_input("Numéro de dossier à marquer comme réclamé")
-    with col2:
-        date_rec = st.date_input("Date de réclamation", value=date.today())
+    df_display = merged[[
+        "Dossier N",
+        "Nom",
+        "Montant_Escrow",
+        "Date envoi",
+        "Etat",
+        "Date reclamation",
+        "Dossier envoye",
+        "Dossier accepte",
+        "Dossier refuse",
+        "Dossier annule",
+        "RFE",
+    ]].copy()
 
-    if st.button("📌 Marquer comme réclamé"):
-        num = (num or "").strip()
-        if not num:
-            st.warning("Merci de saisir un numéro de dossier.")
-            return
+    df_display.rename(columns={
+        "Montant_Escrow": "Montant Escrow",
+        "Date envoi": "Date envoi (Escrow)",
+        "Date reclamation": "Date réclamation (Escrow)",
+    }, inplace=True)
 
-        mask = df_escrow["Dossier N"].astype(str) == num
-        if not mask.any():
-            st.warning("Numéro de dossier introuvable dans Escrow.")
-            return
+    # Formatage des dates
+    df_display["Date envoi (Escrow)"] = _fmt_date_col(df_display["Date envoi (Escrow)"])
+    df_display["Date réclamation (Escrow)"] = _fmt_date_col(df_display["Date réclamation (Escrow)"])
 
-        # Mise à jour de l'état + date
-        df_escrow.loc[mask, "Etat"] = "Réclamé"
-        df_escrow.loc[mask, "Date reclamation"] = pd.to_datetime(date_rec)
+    st.dataframe(
+        df_display.style.format({"Montant Escrow": _fmt_amount}),
+        use_container_width=True
+    )
 
-        # Sauvegarde
-        data["Escrow"] = df_escrow
-        save_all()
+    # ===================== ESCROW À RÉCLAMER =====================
+    st.markdown("---")
+    st.subheader("📨 Escrow à réclamer")
 
-        st.success(f"Dossier {num} marqué comme réclamé.")
+    # Dossier envoyé = date ou champ non vide
+    sent = merged["Dossier envoye"].map(_is_truthy) | merged["Date envoi"].map(_is_truthy)
+
+    accepted = merged["Dossier accepte"].map(_is_truthy)
+    refused = merged["Dossier refuse"].map(_is_truthy)
+    cancelled = merged["Dossier annule"].map(_is_truthy)
+    rfe = merged["RFE"].map(_is_truthy)
+
+    to_reclaim_mask = sent & ~(accepted | refused | cancelled | rfe)
+    df_to_reclaim = merged[to_reclaim_mask].copy()
+
+    if df_to_reclaim.empty:
+        st.info("Aucun dossier à réclamer pour le moment.")
+    else:
+        df_to_reclaim_view = df_to_reclaim[[
+            "Dossier N",
+            "Nom",
+            "Montant_Escrow",
+            "Date envoi",
+        ]].copy()
+        df_to_reclaim_view.rename(columns={
+            "Montant_Escrow": "Montant Escrow",
+            "Date envoi": "Date envoi (Escrow)",
+        }, inplace=True)
+        df_to_reclaim_view["Date envoi (Escrow)"] = _fmt_date_col(df_to_reclaim_view["Date envoi (Escrow)"])
+
+        st.dataframe(
+            df_to_reclaim_view.style.format({"Montant Escrow": _fmt_amount}),
+            use_container_width=True
+        )
+
+    # ===================== ESCROW RÉCLAMÉS / CLOS =====================
+    st.markdown("---")
+    st.subheader("✅ Escrow réclamés / clôturés")
+
+    closed_mask = accepted | refused | cancelled | rfe
+    df_closed = merged[closed_mask].copy()
+
+    if df_closed.empty:
+        st.info("Aucun dossier Escrow encore clôturé.")
+    else:
+        df_closed_view = df_closed[[
+            "Dossier N",
+            "Nom",
+            "Montant_Escrow",
+            "Etat",
+            "Date reclamation",
+            "Dossier accepte",
+            "Dossier refuse",
+            "Dossier annule",
+            "RFE",
+        ]].copy()
+
+        df_closed_view.rename(columns={
+            "Montant_Escrow": "Montant Escrow",
+            "Date reclamation": "Date réclamation (Escrow)",
+        }, inplace=True)
+        df_closed_view["Date réclamation (Escrow)"] = _fmt_date_col(df_closed_view["Date réclamation (Escrow)"])
+
+        st.dataframe(
+            df_closed_view.style.format({"Montant Escrow": _fmt_amount}),
+            use_container_width=True
+        )

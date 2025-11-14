@@ -13,16 +13,14 @@ def tab_ajouter():
 
     df = data["Clients"]
 
-    # --- AUTO-ID sécurisé ---
-    valid_ids = pd.to_numeric(df["Dossier N"], errors="coerce").dropna()
+    # --- ID AUTO ---
+    valid_ids = pd.to_numeric(df["Dossier N"], errors="ignore").dropna()
 
-    if valid_ids.empty:
-        next_id = 1
-    else:
-        next_id = int(valid_ids.max()) + 1
+    next_id = 1 if valid_ids.empty else int(valid_ids.max()) + 1
 
-    st.write(f"**Numéro de dossier attribué automatiquement : {next_id}**")
+    st.info(f"**Numéro de dossier attribué automatiquement : {next_id}**")
 
+    # ---- FORMULAIRE ----
     nom = st.text_input("Nom du client")
 
     col1, col2, col3 = st.columns(3)
@@ -35,7 +33,7 @@ def tab_ajouter():
 
     colA, colB = st.columns(2)
     with colA:
-        montant = st.number_input("Montant honoraires (US $)", min_value=0.0, step=50.0)
+        montant = st.number_input("Montant honoraires (US $)", min_value=0.0, step=10.0)
     with colB:
         autres_frais = st.number_input("Autres frais (US $)", min_value=0.0, step=10.0)
 
@@ -48,19 +46,43 @@ def tab_ajouter():
 
     escrow = st.checkbox("Mettre le dossier en Escrow")
 
+    # ---- SAUVEGARDE ----
     if st.button("💾 Enregistrer le dossier"):
         new_row = {
             "Dossier N": next_id,
             "Nom": nom,
             "Date": pd.Timestamp.today().normalize(),
+
             "Categories": categorie,
             "Sous-categorie": sous_cat,
             "Visa": visa,
+
             "Montant honoraires (US $)": montant,
             "Autres frais (US $)": autres_frais,
+
             "Acompte 1": acompte1,
             "Date Acompte 1": pd.to_datetime(date_acompte1),
+
             "Acompte 2": "",
             "Date Acompte 2": "",
             "Acompte 3": "",
-            "Date
+            "Date Acompte 3": "",
+            "Acompte 4": "",
+            "Date Acompte 4": "",
+
+            "Escrow": escrow,
+
+            "Dossier envoye": "",
+            "Dossier accepte": "",
+            "Dossier refuse": "",
+            "Dossier annule": "",
+            "RFE": "",
+            "Date RFE": "",
+        }
+
+        data["Clients"] = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+        st.session_state["data_xlsx"] = data
+
+        if save_all():
+            st.success("✅ Dossier ajouté et sauvegardé.")
+

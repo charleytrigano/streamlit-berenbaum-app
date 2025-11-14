@@ -19,6 +19,9 @@ def tab_gestion():
 
     st.subheader("📁 Sélection du dossier")
 
+    df.loc[index, "Escrow"] = bool(st.checkbox("Escrow", value=bool(df.at[index, "Escrow"])))
+
+
     # Liste des dossiers valides
     dossier_list = (
         pd.to_numeric(df["Dossier N"], errors="coerce")
@@ -186,3 +189,4 @@ def tab_gestion():
         save_all()
 
         st.success("✅ Modifications enregistrées !")
+

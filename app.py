@@ -1,4 +1,4 @@
-import plotly.express as px
+
 import streamlit as st
 from common_data import ensure_loaded, MAIN_FILE
 

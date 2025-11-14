@@ -13,17 +13,12 @@ def tab_ajouter():
 
     df = data["Clients"]
 
-    # --- ID automatique robuste ---
-    ids = pd.to_numeric(df["Dossier N"], errors="coerce").dropna()
+    # --- AUTO-ID sécurisé ---
+    valid_ids = pd.to_numeric(df["Dossier N"], errors="coerce").dropna()
+    next_id = 1 if valid_ids.empty else int(valid_ids.max()) + 1
 
-    if ids.empty:
-        next_id = 1
-    else:
-        next_id = int(ids.max()) + 1
+    st.write(f"**Numéro de dossier attribué automatiquement : {next_id}**")
 
-    st.info(f"**Numéro de dossier attribué automatiquement : {next_id}**")
-
-    # Champs base
     nom = st.text_input("Nom du client")
 
     col1, col2, col3 = st.columns(3)
@@ -48,8 +43,12 @@ def tab_ajouter():
         date_acompte1 = st.date_input("Date Acompte 1")
 
     escrow = st.checkbox("Mettre le dossier en Escrow")
-    "Escrow": bool(escrow),
 
+    dossier_envoye = st.checkbox("Dossier envoyé")
+    if dossier_envoye:
+        date_envoye = st.date_input("Date envoi")
+    else:
+        date_envoye = ""
 
     if st.button("💾 Enregistrer le dossier"):
         new_row = {
@@ -69,18 +68,16 @@ def tab_ajouter():
             "Date Acompte 3": "",
             "Acompte 4": "",
             "Date Acompte 4": "",
-            "Escrow": "Oui" if escrow else "Non",
-            "Dossier envoye": "",
+            "Escrow": escrow,
+            "Dossier envoye": dossier_envoye,
+            "Date envoi": pd.to_datetime(date_envoye) if dossier_envoye else "",
             "Dossier accepte": "",
             "Dossier refuse": "",
             "Dossier annule": "",
             "RFE": "",
-            "Date RFE": "",
+            "Date RFE": ""
         }
 
-        data["Clients"] = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-
-        if save_all():
-            st.success("✅ Dossier enregistré avec succès !")
-        else:
-            st.error("❌ Erreur lors de la sauvegarde.")
+        df.loc[len(df)] = new_row
+        save_all()
+        st.success("Dossier ajouté avec succès !")

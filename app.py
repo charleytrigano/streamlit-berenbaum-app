@@ -1,3 +1,4 @@
+import plotly.express as px
 import streamlit as st
 from common_data import ensure_loaded, MAIN_FILE
 
@@ -31,6 +32,7 @@ with tabs[1]:
     tab_dashboard()
 with tabs[2]:
     tab_analyses()
+
 with tabs[3]:
     tab_ajouter()
 with tabs[4]:

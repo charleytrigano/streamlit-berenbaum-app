@@ -1,65 +1,57 @@
 import streamlit as st
-import pandas as pd
 from common_data import load_xlsx, save_all_local, MAIN_FILE
+
 
 def tab_fichiers():
     st.header("📄 Gestion des fichiers")
 
-    # =============================
-    # 1. UPLOAD DU FICHIER
-    # =============================
-    uploaded_file = st.file_uploader(
-        "Importer un fichier Excel (.xlsx)",
-        type=["xlsx"],
-        key="file_upload"
-    )
+    # Initialiser session_state si manquant
+    if "data_xlsx" not in st.session_state:
+        st.session_state["data_xlsx"] = None
 
-    if uploaded_file:
-        file_bytes = uploaded_file.read()
+    uploaded = st.file_uploader("Importer un fichier Excel (.xlsx)", type=["xlsx"])
+
+    if uploaded:
+        file_bytes = uploaded.read()
         data = load_xlsx(file_bytes)
 
-        if data:
-            st.session_state["data_xlsx"] = data
-            st.success(f"✅ Fichier **{uploaded_file.name}** chargé avec succès !")
+        if data is None:
+            st.error("❌ Erreur lors de la lecture du fichier.")
+            return
 
-            if st.button("💾 Sauvegarder localement (mémoire)"):
-                ok = save_all_local(st.session_state["data_xlsx"])
-                if ok:
-                    st.success("✨ Sauvegarde locale effectuée.")
+        st.session_state["data_xlsx"] = data
+        st.success("✅ Fichier chargé avec succès !")
 
-    st.markdown("---")
+        # Sauvegarde locale immédiate (en mémoire)
+        save_all_local(data)
 
-    # =============================
-    # 2. AFFICHAGE DES FEUILLES
-    # =============================
-    st.subheader("📑 Feuilles détectées")
-
-    if "data_xlsx" not in st.session_state:
-        st.info("Aucun fichier chargé pour le moment.")
+    # Si aucun fichier n’est encore chargé
+    if st.session_state["data_xlsx"] is None:
+        st.warning("⚠️ Aucun fichier chargé. Veuillez importer un XLSX.")
         return
 
+    # Récupération des données
     data = st.session_state["data_xlsx"]
+
+    # Sécurité : vérifier bien que c'est un dict
+    if not isinstance(data, dict):
+        st.error("❌ Données corrompues en mémoire. Veuillez réimporter le fichier.")
+        st.session_state["data_xlsx"] = None
+        return
+
+    # Affichage des feuilles détectées
     sheet_names = list(data.keys())
+    st.write("📑 **Feuilles disponibles :**", ", ".join(sheet_names))
 
-    st.write("Feuilles disponibles :", ", ".join(sheet_names))
+    # Aperçu des feuilles
+    selected = st.selectbox("Afficher une feuille :", sheet_names)
 
-    # Aperçu rapide
-    selected_sheet = st.selectbox("Afficher une feuille :", sheet_names)
+    df_preview = data[selected]
 
-    df = data[selected_sheet]
+    st.subheader(f"Aperçu : {selected}")
+    st.dataframe(df_preview)
 
-    st.write(f"### Aperçu de **{selected_sheet}**")
-    st.dataframe(df)
-
-    st.markdown("---")
-
-    # =============================
-    # 3. EXPORT DU FICHIER EN LOCAL
-    # =============================
-    if "last_saved_file" in st.session_state:
-        st.download_button(
-            label="⬇️ Télécharger la dernière sauvegarde",
-            data=st.session_state["last_saved_file"],
-            file_name=MAIN_FILE,
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+    # Bouton de sauvegarde (simple)
+    if st.button("💾 Sauvegarder localement"):
+        if save_all_local(st.session_state["data_xlsx"]):
+            st.success("✔️ Sauvegarde locale effectuée !")

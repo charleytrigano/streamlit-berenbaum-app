@@ -3,4 +3,8 @@ pandas
 openpyxl
 xlsxwriter
 python-dateutil
-plotly==5.18.0
+plotly
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+google-api-python-client

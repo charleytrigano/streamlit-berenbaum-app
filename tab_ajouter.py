@@ -8,95 +8,59 @@ def tab_ajouter():
 
     data = ensure_loaded(MAIN_FILE)
     if data is None:
-        st.warning("⚠️ Importez d’abord un fichier via l’onglet Fichiers.")
+        st.warning("Aucun fichier chargé.")
         return
 
     df = data["Clients"]
 
-    # =========================
-    # 🚀 NUMÉRO DOSSIER AUTO
-    # =========================
-    if df.empty:
+    # --- AUTO-ID sécurisé ---
+    valid_ids = pd.to_numeric(df["Dossier N"], errors="coerce").dropna()
+
+    if valid_ids.empty:
         next_id = 1
     else:
-        next_id = int(df["Dossier N"].max()) + 1
+        next_id = int(valid_ids.max()) + 1
 
-    st.subheader(f"Numéro de dossier attribué : **{next_id}**")
+    st.write(f"**Numéro de dossier attribué automatiquement : {next_id}**")
 
-    # =========================
-    # 🔽 Sélections dynamiques
-    # =========================
-    categories = sorted(df["Categories"].dropna().astype(str).unique().tolist())
-    souscats = sorted(df["Sous-categorie"].dropna().astype(str).unique().tolist())
-    visas = sorted(df["Visa"].dropna().astype(str).unique().tolist())
+    nom = st.text_input("Nom du client")
 
     col1, col2, col3 = st.columns(3)
     with col1:
-        nom = st.text_input("Nom du client")
+        categorie = st.text_input("Catégorie")
     with col2:
-        categorie = st.selectbox("Catégorie", [""] + categories)
+        sous_cat = st.text_input("Sous-catégorie")
     with col3:
-        souscat = st.selectbox("Sous-catégorie", [""] + souscats)
+        visa = st.text_input("Visa")
 
-    visa = st.selectbox("Visa", [""] + visas)
-
-    # =========================
-    # 💰 Montants + Acompte 1
-    # =========================
     colA, colB = st.columns(2)
     with colA:
-        montant_hono = st.number_input("Montant honoraires (US $)", min_value=0.0, step=10.0)
+        montant = st.number_input("Montant honoraires (US $)", min_value=0.0, step=50.0)
     with colB:
-        montant_frais = st.number_input("Autres frais (US $)", min_value=0.0, step=10.0)
+        autres_frais = st.number_input("Autres frais (US $)", min_value=0.0, step=10.0)
 
-    st.markdown("### 💵 Acompte")
-
-    colA1, colA2, colA3 = st.columns(3)
+    st.subheader("Acompte")
+    colA1, colA2 = st.columns(2)
     with colA1:
-        acompte1 = st.number_input("Acompte 1 (US$)", min_value=0.0, step=10.0)
+        acompte1 = st.number_input("Acompte 1", min_value=0.0, step=10.0)
     with colA2:
         date_acompte1 = st.date_input("Date Acompte 1")
-    with colA3:
-        mode_paiement = st.text_input("Mode de paiement")
 
-    # =========================
-    # 🛡️ ESCROW
-    # =========================
-    escrow_check = st.checkbox("Escrow ?")
+    escrow = st.checkbox("Mettre le dossier en Escrow")
 
-    # =========================
-    # 📌 Enregistrement
-    # =========================
     if st.button("💾 Enregistrer le dossier"):
         new_row = {
             "Dossier N": next_id,
             "Nom": nom,
-            "Date": pd.Timestamp.today().date(),
+            "Date": pd.Timestamp.today().normalize(),
             "Categories": categorie,
-            "Sous-categorie": souscat,
+            "Sous-categorie": sous_cat,
             "Visa": visa,
-            "Montant honoraires (US $)": montant_hono,
-            "Autres frais (US $)": montant_frais,
+            "Montant honoraires (US $)": montant,
+            "Autres frais (US $)": autres_frais,
             "Acompte 1": acompte1,
             "Date Acompte 1": pd.to_datetime(date_acompte1),
-            "Acompte 2": 0,
-            "Date Acompte 2": pd.NaT,
-            "Acompte 3": 0,
-            "Date Acompte 3": pd.NaT,
-            "Acompte 4": 0,
-            "Date Acompte 4": pd.NaT,
-            "Escrow": "Oui" if escrow_check else "Non",
-            "Dossier envoye": pd.NaT,
-            "Dossier accepte": pd.NaT,
-            "Dossier refuse": pd.NaT,
-            "Dossier annule": pd.NaT,
-            "RFE": "",
-            "Date RFE": pd.NaT,
-        }
-
-        data["Clients"] = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-
-        if save_all():
-            st.success("✅ Dossier ajouté et sauvegardé !")
-        else:
-            st.error("❌ Erreur lors de la sauvegarde.")
+            "Acompte 2": "",
+            "Date Acompte 2": "",
+            "Acompte 3": "",
+            "Date

@@ -1,84 +1,67 @@
 import streamlit as st
 import pandas as pd
-from common_data import ensure_loaded, MAIN_FILE
-
-
-def _to_bool(v):
-    """Convertit ce qui vient d'Excel en bool."""
-    if isinstance(v, bool):
-        return v
-    if isinstance(v, (int, float)):
-        return v == 1
-    if isinstance(v, str):
-        return v.strip().lower() in ["true", "vrai", "1", "yes", "oui", "x"]
-    return False
-
-
-def _to_num(series):
-    """Convertit une série (texte, virgules, espaces) en float propre."""
-    return (
-        pd.to_numeric(
-            series.astype(str)
-            .str.replace("\u00A0", "", regex=False)
-            .str.replace(" ", "", regex=False)
-            .str.replace(",", ".", regex=False),
-            errors="coerce",
-        )
-        .fillna(0.0)
-    )
-
+from common_data import ensure_loaded
 
 def tab_escrow():
-    st.header("🛡️ Escrow")
+    st.header("🛡️ Escrow – Suivi des dossiers")
 
-    data = ensure_loaded(MAIN_FILE)
+    data = ensure_loaded()
     if data is None:
-        st.warning("Fichier non chargé — importer via l’onglet 📄 Fichiers.")
+        st.warning("Aucun fichier chargé.")
         return
 
-    df = data.get("Clients")
-    if df is None or df.empty:
-        st.info("Aucun dossier dans la feuille Clients.")
+    if "Clients" not in data:
+        st.error("La feuille 'Clients' est absente.")
         return
 
-    # vérif colonnes minimales
-    for col in ["Escrow", "Acompte 1", "Montant honoraires (US $)"]:
-        if col not in df.columns:
-            st.error(f"Colonne manquante dans Clients : '{col}'")
-            return
+    df = data["Clients"].copy()
 
-    df = df.copy()
+    # --- Nettoyage automatique ---
+    # Convertir en float propre
+    def to_float(x):
+        try:
+            return float(str(x).replace(",", ".").replace(" ", ""))
+        except:
+            return 0.0
 
-    # normalisation
-    df["Escrow"] = df["Escrow"].apply(_to_bool)
-    acompte1 = _to_num(df["Acompte 1"])
-    honoraires = _to_num(df["Montant honoraires (US $)"])
+    df["Acompte 1"] = df["Acompte 1"].apply(to_float)
+    df["Acompte 2"] = df["Acompte 2"].apply(to_float)
+    df["Acompte 3"] = df["Acompte 3"].apply(to_float)
+    df["Acompte 4"] = df["Acompte 4"].apply(to_float)
+    df["Montant honoraires (US $)"] = df["Montant honoraires (US $)"].apply(to_float)
 
-    # règle métier
-    mask_flag = df["Escrow"] == True
-    mask_auto = (acompte1 > 0) & (honoraires == 0)
+    # --- Conditions Escrow ---
+    acompte_condition = (
+        (df["Acompte 1"] > 0)
+        | (df["Acompte 2"] > 0)
+        | (df["Acompte 3"] > 0)
+        | (df["Acompte 4"] > 0)
+    )
 
-    df_escrow = df[mask_flag | mask_auto].copy()
+    honoraires_zero = df["Montant honoraires (US $)"] == 0
 
-    if df_escrow.empty:
+    escrow_auto = acompte_condition & honoraires_zero
+
+    # --- Résultat final ---
+    escrow_df = df[(df["Escrow"] == True) | (escrow_auto)]
+
+    if escrow_df.empty:
         st.info("Aucun dossier en Escrow pour le moment.")
         return
 
-    # KPI
-    montant_total = acompte1[mask_flag | mask_auto].sum()
-    st.metric("Montant total Acompte 1 en Escrow", f"{montant_total:,.2f} $")
-
-    # colonnes affichées si elles existent
-    cols_aff = [
-        "Dossier N",
-        "Nom",
-        "Catégories",
-        "Sous-catégories",
-        "Visa",
-        "Acompte 1",
-        "Montant honoraires (US $)",
-        "Escrow",
-    ]
-    cols_aff = [c for c in cols_aff if c in df_escrow.columns]
-
-    st.dataframe(df_escrow[cols_aff].reset_index(drop=True), use_container_width=True)
+    st.subheader("📋 Dossiers détectés en Escrow")
+    st.dataframe(
+        escrow_df[
+            [
+                "Dossier N",
+                "Nom",
+                "Acompte 1",
+                "Acompte 2",
+                "Acompte 3",
+                "Acompte 4",
+                "Montant honoraires (US $)",
+                "Escrow",
+            ]
+        ],
+        use_container_width=True
+    )

@@ -1,22 +1,44 @@
 import streamlit as st
 import pandas as pd
-from common_data import ensure_loaded, save_data
+import os
+
+# -----------------------------------------------
+# Fonctions utilitaires pour charger et sauvegarder (fallback si common_data absent)
+# -----------------------------------------------
+
+DATA_PATH = "clients.xlsx"  # adapte si besoin
+
+def ensure_loaded():
+    # Charge un Excel "Clients" ou DataFrame vide si absent
+    try:
+        df_clients = pd.read_excel(DATA_PATH)
+    except Exception:
+        df_clients = pd.DataFrame()
+    return {"Clients": df_clients}
+
+def save_data(data):
+    # Sauvegarde le DataFrame "Clients"
+    df = data.get("Clients", pd.DataFrame())
+    df.to_excel(DATA_PATH, index=False)
+
+# -----------------------------------------------
+# Fonction principale de gestion
+# -----------------------------------------------
 
 def tab_gestion():
     st.header("📝 Gestion des dossiers clients")
 
-    # Chargement des données clients
     data = ensure_loaded()
     if data is None or "Clients" not in data or data["Clients"].empty:
         st.error("Aucune donnée client chargée.")
         return
 
     df = data["Clients"].copy()
-    save_flag = False  # Pour savoir si on a enregistré au moins une modification
+    save_flag = False  # Pour signaler modif(s)
 
     st.info("Modifiez les dossiers ci-dessous. Cliquez sur 'Enregistrer ce dossier' à chaque modification.")
 
-    # Boucle sur les dossiers
+    # Edition dossier par dossier
     for idx, row in df.iterrows():
         with st.expander(f"Dossier N°{row.get('Dossier N', idx)} — {row.get('Nom', '')}", expanded=False):
 
@@ -34,12 +56,12 @@ def tab_gestion():
             dossier_envoye = st.checkbox("Dossier envoyé", value=str(row.get("Dossier envoyé", "")).strip().lower() in ["true", "1", "vrai", "oui", "x", "ok"], key=f"envoye_{idx}")
             date_envoi = st.text_input("Date envoi", value=str(row.get("Date envoi", "")), key=f"dateenv_{idx}")
 
-            # Nouvelle case à cocher Escrow (édition directe)
+            # Case à cocher Escrow
             escrow_val = st.checkbox("Escrow", value=str(row.get("Escrow", "")).strip().lower() in ["true", "1", "vrai", "oui", "x", "ok"], key=f"escrow_{idx}")
 
-            # Optionnel : autres acomptes, champs personnalisés ici...
+            # Ajoute autres champs si besoin (Acomptes 2,3,4, etc.)
 
-            # Enregistrement du dossier
+            # Enregistrement
             if st.button(f"Enregistrer ce dossier", key=f"save_{idx}"):
                 df.at[idx, "Nom"] = nom
                 df.at[idx, "Catégories"] = categorie
@@ -55,12 +77,12 @@ def tab_gestion():
                 save_flag = True
                 st.success(f"Dossier N°{row.get('Dossier N', idx)} mis à jour.")
 
-    # Sauvegarde globale si au moins un enregistrement effectué
+    # Sauvegarde globale si au moins une modif
     if save_flag:
         data["Clients"] = df
         save_data(data)
         st.info("Les modifications ont été sauvegardées.")
 
-    # Aperçu synthétique du fichier clients
+    # Aperçu synthétique en bas
     st.subheader("Aperçu synthétique des dossiers")
     st.dataframe(df, use_container_width=True)

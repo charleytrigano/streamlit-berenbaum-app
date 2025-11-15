@@ -2,15 +2,19 @@ import streamlit as st
 import pandas as pd
 import os
 
-DATA_PATH = "clients.xlsx"  # Chemin à adapter si nécessaire
+DATA_PATH = "clients.xlsx"  # Modifie si besoin
 
 def ensure_loaded():
     try:
         df_clients = pd.read_excel(DATA_PATH)
+        # DEBUG : affichage des colonnes et de la tête du tableau
+        st.write("### Colonnes du fichier Excel :", df_clients.columns.tolist())
+        st.write("### Aperçu des 5 premières lignes :", df_clients.head())
         if df_clients.empty:
+            st.warning("Le fichier Excel est vide.")
             return None
     except Exception as e:
-        st.error(f"Erreur lors du chargement Excel : {e}")
+        st.error(f"Erreur lors du chargement Excel : {e}")
         return None
     return {"Clients": df_clients}
 
@@ -27,6 +31,14 @@ def format_checkbox(val):
 def tab_gestion():
     st.header("📝 Gestion des dossiers clients")
     data = ensure_loaded()
+    
+    # TESTS DEBUG : affiche data et présence des clés attendues
+    st.write("### TEST data.keys() :", list(data.keys()) if data else "data est None")
+    if data and "Clients" in data:
+        st.write("### TEST len(data['Clients']) :", len(data["Clients"]))
+    else:
+        st.write("### TEST : la clé 'Clients' est absente ou data est None")
+
     if data is None or "Clients" not in data or data["Clients"].empty:
         st.error("Aucune donnée client chargée.")
         return
@@ -36,7 +48,7 @@ def tab_gestion():
 
     st.info("Modifiez chaque dossier puis enregistrez vos modifications une à une.")
 
-    # Champs à éditer : adapte selon ton fichier Excel
+    # Champs à éditer : adapte selon ton Excel
     base_champs = [
         ("Dossier N", "text"),
         ("Nom", "text"),
@@ -57,6 +69,7 @@ def tab_gestion():
         ("Date envoi", "text"),
         ("Escrow", "checkbox"),
         ("Commentaires", "text"),
+        # Ajoute ici tous champs supplémentaires
     ]
 
     for idx, row in df.iterrows():

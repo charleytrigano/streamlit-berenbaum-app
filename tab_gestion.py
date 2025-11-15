@@ -1,8 +1,3 @@
-import streamlit as st
-import pandas as pd
-
-def tab_gestion():
-    st.write("Test de l'appel à tab_gestion : tout fonctionne !")import streamlit as st
 import pandas as pd
 import os
 
@@ -115,4 +110,5 @@ def tab_gestion():
     st.subheader("Aperçu synthétique des dossiers")
     synth_cols = [col for col, _ in base_champs if col in df.columns]
     st.dataframe(df[synth_cols], use_container_width=True)
+
 

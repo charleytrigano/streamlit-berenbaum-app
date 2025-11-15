@@ -5,7 +5,8 @@ from common_data import ensure_loaded, save_all, MAIN_FILE
 def tab_ajouter():
     st.header("➕ Ajouter un dossier")
 
-    data = ensure_loaded(MAIN_FILE)
+    data = ensure_loaded()  # correction: RETIRE L'ARGUMENT
+
     if data is None:
         st.warning("Aucun fichier chargé.")
         return
@@ -22,9 +23,9 @@ def tab_ajouter():
 
     col1, col2, col3 = st.columns(3)
     with col1:
-        categorie = st.text_input("Catégorie")
+        categorie = st.text_input("Catégories")  # correction
     with col2:
-        sous_cat = st.text_input("Sous-catégorie")
+        sous_cat = st.text_input("Sous-catégories")  # correction
     with col3:
         visa = st.text_input("Visa")
 
@@ -41,6 +42,8 @@ def tab_ajouter():
     with colA2:
         date_acompte1 = st.date_input("Date Acompte 1")
 
+    mode_paiement = st.text_input("mode de paiement")  # nouvelle colonne (si souhaité/réel)
+
     escrow = st.checkbox("Mettre le dossier en Escrow")
 
     dossier_envoye = st.checkbox("Dossier envoyé")
@@ -49,32 +52,57 @@ def tab_ajouter():
     else:
         date_envoye = None
 
+    dossier_accepte = st.checkbox("Dossier accepté")
+    if dossier_accepte:
+        date_acceptation = st.date_input("Date acceptation")
+    else:
+        date_acceptation = None
+
+    dossier_refuse = st.checkbox("Dossier refusé")
+    if dossier_refuse:
+        date_refus = st.date_input("Date refus")
+    else:
+        date_refus = None
+
+    dossier_annule = st.checkbox("Dossier Annulé")
+    if dossier_annule:
+        date_annulation = st.date_input("Date annulation")
+    else:
+        date_annulation = None
+
+    rfe = st.text_input("RFE")
+    commentaires = st.text_area("Commentaires")
+
     if st.button("💾 Enregistrer le dossier"):
         new_row = {
             "Dossier N": next_id,
             "Nom": nom,
             "Date": pd.Timestamp.today().normalize(),
-            "Catégorie": categorie,  # assurant cohérence nom colonne
-            "Sous-catégorie": sous_cat,
+            "Catégories": categorie,
+            "Sous-catégories": sous_cat,
             "Visa": visa,
             "Montant honoraires (US $)": montant,
             "Autres frais (US $)": autres_frais,
             "Acompte 1": acompte1,
-            "Date Acompte 1": pd.to_datetime(date_acompte1),
-            "Acompte 2": "",
+            "Date Acompte 1": pd.to_datetime(date_acompte1) if date_acompte1 else pd.NaT,
+            "mode de paiement": mode_paiement,
+            "Escrow": escrow,
+            "Acompte 2": "",  # à remplir selon UI, ici vide
             "Date Acompte 2": "",
             "Acompte 3": "",
             "Date Acompte 3": "",
             "Acompte 4": "",
             "Date Acompte 4": "",
-            "Escrow": escrow,
-            "Dossier envoye": dossier_envoye,
+            "Dossier envoyé": dossier_envoye,
             "Date envoi": pd.to_datetime(date_envoye) if date_envoye else pd.NaT,
-            "Dossier accepte": "",
-            "Dossier refuse": "",
-            "Dossier annule": "",
-            "RFE": "",
-            "Date RFE": ""
+            "Dossier accepté": dossier_accepte,
+            "Date acceptation": pd.to_datetime(date_acceptation) if date_acceptation else pd.NaT,
+            "Dossier refusé": dossier_refuse,
+            "Date refus": pd.to_datetime(date_refus) if date_refus else pd.NaT,
+            "Dossier Annulé": dossier_annule,
+            "Date annulation": pd.to_datetime(date_annulation) if date_annulation else pd.NaT,
+            "RFE": rfe,
+            "Commentaires": commentaires,
         }
 
         df.loc[len(df)] = new_row

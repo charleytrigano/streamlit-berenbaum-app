@@ -1,12 +1,11 @@
 import streamlit as st
 import pandas as pd
-from common_data import ensure_loaded, save_all, MAIN_FILE
+from common_data import ensure_loaded, save_all
 
 def tab_ajouter():
     st.header("➕ Ajouter un dossier")
 
-    data = ensure_loaded()  # correction: RETIRE L'ARGUMENT
-
+    data = ensure_loaded()
     if data is None:
         st.warning("Aucun fichier chargé.")
         return
@@ -23,17 +22,34 @@ def tab_ajouter():
 
     col1, col2, col3 = st.columns(3)
     with col1:
-        categorie = st.text_input("Catégories")  # correction
+        categorie = st.text_input("Catégories")
     with col2:
-        sous_cat = st.text_input("Sous-catégories")  # correction
+        sous_cat = st.text_input("Sous-catégories")
     with col3:
         visa = st.text_input("Visa")
 
-    colA, colB = st.columns(2)
+    # Montant Honoraires et Autres Frais (cols fines) + Total
+    colA, colB, colC = st.columns([1, 1, 1])
     with colA:
-        montant = st.number_input("Montant honoraires (US $)", min_value=0.0, step=50.0)
+        montant = st.number_input("Montant honoraires (US $)", min_value=0.0, step=50.0, format="%.2f")
     with colB:
-        autres_frais = st.number_input("Autres frais (US $)", min_value=0.0, step=10.0)
+        autres_frais = st.number_input("Autres frais (US $)", min_value=0.0, step=10.0, format="%.2f")
+    with colC:
+        total_facture = montant + autres_frais
+        st.metric("Total facturé (US $)", f"{total_facture:,.2f}")
+
+    st.subheader("Mode de paiement")
+    pm_cheque = st.checkbox("Chèque")
+    pm_cb = st.checkbox("CB")
+    pm_vir = st.checkbox("Virement")
+    pm_venmo = st.checkbox("Venmo")
+
+    mode_paiement = []
+    if pm_cheque: mode_paiement.append("Chèque")
+    if pm_cb: mode_paiement.append("CB")
+    if pm_vir: mode_paiement.append("Virement")
+    if pm_venmo: mode_paiement.append("Venmo")
+    mode_paiement_str = ", ".join(mode_paiement)
 
     st.subheader("Acompte")
     colA1, colA2 = st.columns(2)
@@ -42,35 +58,29 @@ def tab_ajouter():
     with colA2:
         date_acompte1 = st.date_input("Date Acompte 1")
 
-    mode_paiement = st.text_input("mode de paiement")  # nouvelle colonne (si souhaité/réel)
-
     escrow = st.checkbox("Mettre le dossier en Escrow")
 
-    dossier_envoye = st.checkbox("Dossier envoyé")
-    if dossier_envoye:
-        date_envoye = st.date_input("Date envoi")
-    else:
-        date_envoye = None
+    st.subheader("Statut du dossier")
+    statut_cols = st.columns(4)
+    with statut_cols[0]:
+        dossier_envoye = st.checkbox("Dossier envoyé")
+        date_envoye = st.date_input("Date envoi") if dossier_envoye else None
+    with statut_cols[1]:
+        dossier_accepte = st.checkbox("Dossier accepté")
+        date_acceptation = st.date_input("Date acceptation") if dossier_accepte else None
+    with statut_cols[2]:
+        dossier_refuse = st.checkbox("Dossier refusé")
+        date_refus = st.date_input("Date refus") if dossier_refuse else None
+    with statut_cols[3]:
+        dossier_annule = st.checkbox("Dossier Annulé")
+        date_annulation = st.date_input("Date annulation") if dossier_annule else None
 
-    dossier_accepte = st.checkbox("Dossier accepté")
-    if dossier_accepte:
-        date_acceptation = st.date_input("Date acceptation")
+    statut_active = any([dossier_envoye, dossier_accepte, dossier_refuse, dossier_annule])
+    if statut_active:
+        rfe = st.checkbox("RFE")
     else:
-        date_acceptation = None
+        rfe = False
 
-    dossier_refuse = st.checkbox("Dossier refusé")
-    if dossier_refuse:
-        date_refus = st.date_input("Date refus")
-    else:
-        date_refus = None
-
-    dossier_annule = st.checkbox("Dossier Annulé")
-    if dossier_annule:
-        date_annulation = st.date_input("Date annulation")
-    else:
-        date_annulation = None
-
-    rfe = st.text_input("RFE")
     commentaires = st.text_area("Commentaires")
 
     if st.button("💾 Enregistrer le dossier"):
@@ -83,11 +93,12 @@ def tab_ajouter():
             "Visa": visa,
             "Montant honoraires (US $)": montant,
             "Autres frais (US $)": autres_frais,
+            "Total facture": total_facture,
             "Acompte 1": acompte1,
             "Date Acompte 1": pd.to_datetime(date_acompte1) if date_acompte1 else pd.NaT,
-            "mode de paiement": mode_paiement,
+            "mode de paiement": mode_paiement_str,
             "Escrow": escrow,
-            "Acompte 2": "",  # à remplir selon UI, ici vide
+            "Acompte 2": "",
             "Date Acompte 2": "",
             "Acompte 3": "",
             "Date Acompte 3": "",

@@ -3,6 +3,14 @@ import pandas as pd
 from common_data import ensure_loaded, save_all, MAIN_FILE
 
 
+def get_col(df, possible_names):
+    """Retourne le vrai nom de colonne dans le fichier."""
+    for name in possible_names:
+        if name in df.columns:
+            return name
+    return None
+
+
 def tab_gestion():
     st.header("✏️ / 🗑️ Gestion des dossiers")
 
@@ -16,6 +24,11 @@ def tab_gestion():
     if df.empty:
         st.info("Aucun dossier dans la feuille Clients.")
         return
+
+    # --- colonne réelle pour Categories ---
+    col_categories = get_col(df, ["Categories", "Catégories", "Categorie", "Catégorie"])
+    col_sous = get_col(df, ["Sous-categorie", "Sous-catégorie", "Sous catégorie"])
+    col_visa = get_col(df, ["Visa", "Type Visa"])
 
     # Sélection du dossier
     dossier_ids = df["Dossier N"].astype(str).tolist()
@@ -34,11 +47,24 @@ def tab_gestion():
     # --- Nom ---
     nom = st.text_input("Nom", value=str(dossier["Nom"]))
 
-    # --- Ligne Catégorie / Sous-catégorie / Visa ---
+    # --- Catégorie / Sous-catégorie / Visa ---
     c1, c2, c3 = st.columns(3)
-    categorie = c1.text_input("Catégorie", value=str(dossier["Categories"]))
-    sous_cat = c2.text_input("Sous-catégorie", value=str(dossier["Sous-categorie"]))
-    visa = c3.text_input("Visa", value=str(dossier["Visa"]))
+    categorie = c1.text_input(
+        "Catégorie",
+        value=str(dossier.get(col_categories, "")),
+    )
+    sous_cat = c2.text_input(
+        "Sous-catégorie",
+        value=str(dossier.get(col_sous, "")),
+    )
+    visa = c3.text_input(
+        "Visa",
+        value=str(dossier.get(col_visa, "")),
+    )
+
+    df.loc[index, col_categories] = categorie
+    df.loc[index, col_sous] = sous_cat
+    df.loc[index, col_visa] = visa
 
     # --- Montants ---
     c4, c5 = st.columns(2)
@@ -53,9 +79,11 @@ def tab_gestion():
         min_value=0.0,
     )
 
+    df.loc[index, "Montant honoraires (US $)"] = montant
+    df.loc[index, "Autres frais (US $)"] = autres_frais
+
     # --- Acomptes ---
     st.subheader("Acomptes")
-
     for n in range(1, 5):
         colA, colB, colC = st.columns([1, 1, 1.2])
         acompte_key = f"Acompte {n}"
@@ -79,7 +107,6 @@ def tab_gestion():
 
     # --- ESCROW ---
     st.subheader("Escrow")
-
     escrow_val = bool(dossier.get("Escrow", False))
     new_escrow = st.checkbox("Mettre en Escrow", value=escrow_val)
     df.loc[index, "Escrow"] = new_escrow

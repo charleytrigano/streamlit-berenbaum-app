@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import datetime
 from common_data import ensure_loaded, save_all
 
 def _to_float(value):
@@ -10,12 +11,16 @@ def _to_float(value):
         return 0.0
 
 def _to_date(value, default=None):
-    if value is None or str(value).strip() == "":
-        return default
+    """Convertit Excel vers date ou retourne une date du jour si absent."""
+    if value is None or str(value).strip() == "" or pd.isna(value):
+        return default if default else datetime.date.today()
     try:
-        return pd.to_datetime(value).date()
+        d = pd.to_datetime(value)
+        if pd.isna(d):
+            return default if default else datetime.date.today()
+        return d.date()
     except Exception:
-        return default
+        return default if default else datetime.date.today()
 
 def tab_gestion():
     st.header("✏️ / 🗑️ Gestion d’un dossier")
@@ -69,7 +74,7 @@ def tab_gestion():
         date_col = f"Date Acompte {i}"
         if acompte_col in df.columns:
             v = _to_float(dossier.get(acompte_col, 0.0))
-            d = _to_date(dossier.get(date_col))
+            d = _to_date(dossier.get(date_col), default=datetime.date.today())
             reste -= v
             acomptes.append((
                 st.number_input(f"{acompte_col} (US $)", min_value=0.0, value=v, step=10.0, key=f"acompte_{i}"),
@@ -95,11 +100,11 @@ def tab_gestion():
     st.subheader("Dates de suivi")
     colA, colB = st.columns(2)
     with colA:
-        date_envoye = st.date_input("Date dossier envoyé", _to_date(dossier.get("Date envoi")))
-        date_accepte = st.date_input("Date dossier accepté", _to_date(dossier.get("Date acceptation")))
-        date_refuse = st.date_input("Date dossier refusé", _to_date(dossier.get("Date refus")))
-        date_annule = st.date_input("Date dossier annulé", _to_date(dossier.get("Date annulation")))
-        date_rfe = st.date_input("Date RFE", _to_date(dossier.get("Date Acompte 1"))) # adapte si tu veux une autre colonne
+        date_envoye = st.date_input("Date dossier envoyé", _to_date(dossier.get("Date envoi"), default=datetime.date.today()))
+        date_accepte = st.date_input("Date dossier accepté", _to_date(dossier.get("Date acceptation"), default=datetime.date.today()))
+        date_refuse = st.date_input("Date dossier refusé", _to_date(dossier.get("Date refus"), default=datetime.date.today()))
+        date_annule = st.date_input("Date dossier annulé", _to_date(dossier.get("Date annulation"), default=datetime.date.today()))
+        date_rfe = st.date_input("Date RFE", _to_date(dossier.get("Date Acompte 1"), default=datetime.date.today())) # adapte si tu veux une autre colonne
 
     with colB:
         rfe = st.checkbox("RFE", value=bool(dossier.get("RFE", False)))

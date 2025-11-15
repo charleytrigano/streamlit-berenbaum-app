@@ -21,10 +21,9 @@ def tab_gestion():
             nom      = st.text_input("Nom", value=str(row.get("Nom", "")), key=f"nom_{idx}")
             dossier_envoye = st.checkbox("Dossier envoyé", value=str(row.get("Dossier envoyé", "")).strip().lower() in ["true","1","vrai","oui","x","ok"], key=f"envoye_{idx}")
             date_envoi = st.text_input("Date envoi", value=str(row.get("Date envoi", "")), key=f"dateenv_{idx}")
-            # Nouvelle case Escrow
+            # Case à cocher ESCROW
             escrow_val = st.checkbox("Escrow", value=str(row.get("Escrow", "")).strip().lower() in ["true","1","vrai","oui","x","ok"], key=f"escrow_{idx}")
-
-            # Autres champs (exemple) : Montant honoraires, Acompte 1
+            # Autres champs fréquents
             honoraires = st.text_input("Montant honoraires (US $)", value=str(row.get("Montant honoraires (US $)", "")), key=f"hon_{idx}")
             acompte1 = st.text_input("Acompte 1", value=str(row.get("Acompte 1", "")), key=f"acomp1_{idx}")
 
@@ -37,14 +36,14 @@ def tab_gestion():
                 df.at[idx, "Montant honoraires (US $)"] = honoraires
                 df.at[idx, "Acompte 1"] = acompte1
                 st.success(f"Dossier N°{row.get('Dossier N', idx)} mis à jour.")
-                # Option de sauvegarde globale
                 edited_rows[idx] = True
 
     # Sauvegarde finale si au moins un dossier édité
     if len(edited_rows) > 0:
+        data["Clients"] = df  # Mise à jour des données globales
         save_data(data)
         st.info("Toutes les modifications ont été sauvegardées.")
 
-    # Affichage synthétique des dossiers
+    # Aperçu synthétique des dossiers
     st.subheader("Aperçu des dossiers clients")
     st.dataframe(df, use_container_width=True)

@@ -1,84 +1,84 @@
 import streamlit as st
 import pandas as pd
-from common_data import ensure_loaded
+from common_data import ensure_loaded, MAIN_FILE
 
 
-def _to_bool(value):
-    if isinstance(value, bool):
-        return value
-    s = str(value).strip().lower()
-    return s in ("1", "true", "vrai", "oui", "yes", "x")
+def _to_bool(v):
+    """Convertit ce qui vient d'Excel en bool."""
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, (int, float)):
+        return v == 1
+    if isinstance(v, str):
+        return v.strip().lower() in ["true", "vrai", "1", "yes", "oui", "x"]
+    return False
+
+
+def _to_num(series):
+    """Convertit une série (texte, virgules, espaces) en float propre."""
+    return (
+        pd.to_numeric(
+            series.astype(str)
+            .str.replace("\u00A0", "", regex=False)
+            .str.replace(" ", "", regex=False)
+            .str.replace(",", ".", regex=False),
+            errors="coerce",
+        )
+        .fillna(0.0)
+    )
 
 
 def tab_escrow():
     st.header("🛡️ Escrow")
 
-    data = ensure_loaded()
+    data = ensure_loaded(MAIN_FILE)
     if data is None:
-        st.warning("Aucune donnée chargée. Importe le fichier via 📄 Fichiers.")
+        st.warning("Fichier non chargé — importer via l’onglet 📄 Fichiers.")
         return
 
-    df = data["Clients"].copy()
-    if df.empty:
+    df = data.get("Clients")
+    if df is None or df.empty:
         st.info("Aucun dossier dans la feuille Clients.")
         return
 
-    # Colonnes numériques utiles
-    hono = pd.to_numeric(df["Montant honoraires (US $)"], errors="coerce").fillna(0.0)
-    ac1 = pd.to_numeric(df["Acompte 1"], errors="coerce").fillna(0.0)
+    # vérif colonnes minimales
+    for col in ["Escrow", "Acompte 1", "Montant honoraires (US $)"]:
+        if col not in df.columns:
+            st.error(f"Colonne manquante dans Clients : '{col}'")
+            return
 
-    # Escrow manuel (case cochée)
-    escrow_manual = df["Escrow"].apply(_to_bool)
+    df = df.copy()
 
-    # Escrow automatique : Acompte 1 > 0 et honoraires == 0
-    escrow_auto = (ac1 > 0) & (hono == 0)
+    # normalisation
+    df["Escrow"] = df["Escrow"].apply(_to_bool)
+    acompte1 = _to_num(df["Acompte 1"])
+    honoraires = _to_num(df["Montant honoraires (US $)"])
 
-    escrow_mask = escrow_manual | escrow_auto
-    df_escrow = df[escrow_mask].copy()
+    # règle métier
+    mask_flag = df["Escrow"] == True
+    mask_auto = (acompte1 > 0) & (honoraires == 0)
+
+    df_escrow = df[mask_flag | mask_auto].copy()
 
     if df_escrow.empty:
         st.info("Aucun dossier en Escrow pour le moment.")
         return
 
     # KPI
-    nb_dossiers = len(df_escrow)
-    total_acompte = ac1[escrow_mask].sum()
+    montant_total = acompte1[mask_flag | mask_auto].sum()
+    st.metric("Montant total Acompte 1 en Escrow", f"{montant_total:,.2f} $")
 
-    c1, c2 = st.columns(2)
-    with c1:
-        st.metric("Nombre de dossiers en Escrow", nb_dossiers)
-    with c2:
-        st.metric("Total Acompte 1 (Escrow)", f"{total_acompte:,.2f} $")
-
-    # Tableau des dossiers en Escrow
+    # colonnes affichées si elles existent
     cols_aff = [
         "Dossier N",
         "Nom",
-        "Date",
         "Catégories",
         "Sous-catégories",
         "Visa",
-        "Montant honoraires (US $)",
         "Acompte 1",
-        "Date Acompte 1",
-        "mode de paiement",
+        "Montant honoraires (US $)",
         "Escrow",
-        "Dossier envoyé",
-        "Date envoi",
-        "Dossier accepté",
-        "Dossier refusé",
-        "Dossier Annulé",
-        "RFE",
     ]
-    cols_exist = [c for c in cols_aff if c in df_escrow.columns]
+    cols_aff = [c for c in cols_aff if c in df_escrow.columns]
 
-    st.markdown("### Liste des dossiers en Escrow")
-    st.dataframe(
-        df_escrow[cols_exist].style.format(
-            {
-                "Montant honoraires (US $)": "{:,.2f}",
-                "Acompte 1": "{:,.2f}",
-            }
-        ),
-        use_container_width=True,
-    )
+    st.dataframe(df_escrow[cols_aff].reset_index(drop=True), use_container_width=True)

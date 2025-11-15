@@ -16,7 +16,7 @@ def tab_escrow():
     def to_float(x):
         try:
             f = float(str(x).replace(",", ".").replace(" ", ""))
-            # Considère 'None' ou '' ou 'nan' ou pd.NA ou np.nan ou 'NoneType' comme zero aussi
+            # Considère None, '', 'nan', pd.NA, np.nan comme zéro
             if (str(x).strip().lower() in ["none", "nan", "", "nonetype"] or pd.isna(x)):
                 return 0.0
             return f
@@ -28,22 +28,20 @@ def tab_escrow():
     if "Escrow" not in df.columns:
         df["Escrow"] = False
 
-    # Nettoyage Escrow : True, Vrai, Oui, 1, X, etc.
     def escrow_bool(val):
         val = str(val).strip().lower()
         return val in ["true", "vrai", "1", "oui", "x", "ok"]
 
     df["Escrow"] = df["Escrow"].apply(escrow_bool)
 
-    # Cas 1 : Escrow est coché/vrai/etc (mask_escrow)
+    # Condition 1 : Escrow est coché/vrai
     mask_escrow = df["Escrow"] == True
-    
-    # Cas 2 : honoraires zéro/absent et acompte 1 > 0 (mask_auto; inclus tout ce qui peut être zéro/vides)
+    # Condition 2 : honoraires zéro/absent et acompte 1 > 0
     mask_zero_honoraires = (df["Montant honoraires (US $)"] == 0)
     mask_acompte_positif = (df["Acompte 1"] > 0)
     mask_auto = mask_zero_honoraires & mask_acompte_positif
 
-    # Union
+    # Union des deux filtres
     escrow_df = df[mask_escrow | mask_auto].copy()
 
     if escrow_df.empty:
@@ -51,6 +49,13 @@ def tab_escrow():
         return
 
     escrow_df["Montant escrow"] = escrow_df["Acompte 1"]
+
+    # Affichage des KPI : montant total & nombre de dossiers
+    total_escrow = escrow_df["Montant escrow"].sum()
+    n_dossiers = len(escrow_df)
+    kpi_col1, kpi_col2 = st.columns(2)
+    kpi_col1.metric("Montant total Escrow (US $)", f"{total_escrow:,.0f}")
+    kpi_col2.metric("Nombre de dossiers Escrow", n_dossiers)
 
     st.subheader("📋 Dossiers détectés en Escrow")
     st.dataframe(

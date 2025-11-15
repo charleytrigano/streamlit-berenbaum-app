@@ -16,32 +16,33 @@ def tab_escrow():
 
     df = data["Clients"].copy()
 
-    # --- Nettoyage automatique ---
     def to_float(x):
         try:
             return float(str(x).replace(",", ".").replace(" ", ""))
-        except:
+        except Exception:
             return 0.0
 
+    # Nettoyage des colonnes concernées
     df["Acompte 1"] = df["Acompte 1"].apply(to_float)
     df["Montant honoraires (US $)"] = df["Montant honoraires (US $)"].apply(to_float)
     if "Escrow" not in df.columns:
         df["Escrow"] = False
 
-    # --- Recherche Escrow ---
-    # Cas 1 : case cochée
-    mask_escrow = df["Escrow"] == True
+    # S'assurer que la colonne Escrow est booléenne
+    df["Escrow"] = df["Escrow"].apply(lambda x: True if str(x).lower() in ("true", "vrai", "1") else False)
 
-    # Cas 2 : Montant honoraires à 0 et acompte 1 > 0
+    # Condition 1 : ESCROW coché
+    mask_escrow = df["Escrow"] == True
+    # Condition 2 : honoraires à zéro et acompte 1 > 0
     mask_auto = (df["Montant honoraires (US $)"] == 0) & (df["Acompte 1"] > 0)
 
-    # Union des deux cas
+    # Union (pas de doublons)
     escrow_df = df[mask_escrow | mask_auto].copy()
+
     if escrow_df.empty:
         st.info("Aucun dossier en Escrow pour le moment.")
         return
 
-    # Dans tous les cas le montant escrow = acompte 1
     escrow_df["Montant escrow"] = escrow_df["Acompte 1"]
 
     st.subheader("📋 Dossiers détectés en Escrow")

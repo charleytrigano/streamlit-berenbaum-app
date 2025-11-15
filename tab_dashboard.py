@@ -1,110 +1,68 @@
 import streamlit as st
 import pandas as pd
+from common_data import ensure_loaded
 
 def tab_dashboard():
-    """Tableau de bord principal - synthèse financière."""
-    st.header("📊 Tableau de bord")
+    st.header("📊 Dashboard")
 
-    # Vérifie si les données Excel sont chargées
-    if "data_xlsx" not in st.session_state or not st.session_state["data_xlsx"]:
-        st.warning("⚠️ Aucune donnée disponible. Chargez d'abord le fichier Excel via l'onglet 📄 Fichiers.")
-        return
-
-    data = st.session_state["data_xlsx"]
-
-    # Vérifie la présence de la feuille "Clients"
-    if "Clients" not in data:
-        st.error("❌ La feuille 'Clients' est absente du fichier Excel.")
+    data = ensure_loaded()
+    if data is None or "Clients" not in data or data["Clients"].empty:
+        st.info("Aucune donnée client à afficher.")
         return
 
     df = data["Clients"].copy()
-    if df.empty:
-        st.warning("📄 La feuille 'Clients' est vide.")
-        return
 
-    # === Nettoyage des montants ===
-    def _to_float(x):
+    # Nettoyage pour faciliter les KPI
+    def to_float(x):
         try:
-            s = str(x).replace(",", ".").replace("\u00A0", "").strip()
-            return float(s) if s not in ["", "nan", "None"] else 0.0
+            return float(str(x).replace(",", ".").replace(" ", ""))
         except:
             return 0.0
 
-    for col in ["Montant honoraires (US $)", "Autres frais (US $)"]:
-        if col in df.columns:
-            df[col] = df[col].map(_to_float)
-        else:
-            df[col] = 0.0
+    df["Acompte 1"] = df["Acompte 1"].apply(to_float)
+    df["Montant honoraires (US $)"] = df["Montant honoraires (US $)"].apply(to_float)
 
-    df["Montant facturé"] = df["Montant honoraires (US $)"] + df["Autres frais (US $)"]
+    # Logique ESCROW selon les règles métier
+    escrow_checked = df["Escrow"] == True
+    escrow_auto = (
+        (df["Montant honoraires (US $)"] == 0) &
+        (df["Acompte 1"] > 0) &
+        ((df["Escrow"] == False) | (df["Escrow"].isna()))
+    )
+    escrow_mask = escrow_checked | escrow_auto
+    escrow_df = df[escrow_mask]
 
-    acompte_cols = [c for c in df.columns if c.lower().startswith("acompte")]
-    for c in acompte_cols:
-        df[c] = df[c].map(_to_float)
-    df["Total payé"] = df[acompte_cols].sum(axis=1)
-    df["Solde restant"] = df["Montant facturé"] - df["Total payé"]
+    # KPIs
+    total_clients = len(df)
+    total_escrow_dossiers = len(escrow_df)
+    total_escrow_usd = escrow_df["Acompte 1"].sum()
 
-    # === Format monétaire ===
-    def _fmt_money(v):
-        try:
-            return f"{v:,.2f}".replace(",", " ").replace(".", ",") + " $"
-        except:
-            return v
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Total dossiers clients", total_clients)
+    with col2:
+        st.metric("Nombre de dossiers en escrow", total_escrow_dossiers)
+    with col3:
+        st.metric("Total Escrow (US $)", f"{total_escrow_usd:,.2f}")
 
-    # === KPI principaux ===
-    total_dossiers = len(df)
-    total_facture = df["Montant facturé"].sum()
-    total_paye = df["Total payé"].sum()
-    total_solde = df["Solde restant"].sum()
+    # (Optionnel) Autres KPI financiers
+    total_honoraires = df["Montant honoraires (US $)"].sum()
+    total_facture = df[["Montant honoraires (US $)", "Autres frais (US $)"]].apply(to_float).sum().sum() if "Autres frais (US $)" in df.columns else total_honoraires
 
-    st.markdown("### 📈 Synthèse financière")
+    col4, col5 = st.columns(2)
+    with col4:
+        st.metric("Honoraires facturés (US $)", f"{total_honoraires:,.2f}")
+    with col5:
+        st.metric("Total facturé (Honoraires + frais)", f"{total_facture:,.2f}")
 
-    kpi_style = """
-    <style>
-    [data-testid="stMetricValue"] {
-        font-size: 22px !important;
-        color: #fafafa !important;
-    }
-    </style>
-    """
-    st.markdown(kpi_style, unsafe_allow_html=True)
-
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("📂 Dossiers", f"{total_dossiers:,}".replace(",", " "))
-    c2.metric("💵 Montant facturé", _fmt_money(total_facture))
-    c3.metric("💰 Total payé", _fmt_money(total_paye))
-    c4.metric("📉 Solde restant", _fmt_money(total_solde))
-
-    st.markdown("---")
-
-    # === Colonnes à afficher (on garde seulement celles qui existent)
-    desired_cols = [
-        "Dossier N", "Nom", "Catégories", "Sous-catégories", "Visa",
-        "Montant honoraires (US $)", "Autres frais (US $)",
-        "Montant facturé", "Total payé", "Solde restant"
-    ]
-    existing_cols = [col for col in desired_cols if col in df.columns]
-
-    st.subheader("📋 Détails des dossiers clients")
-    df_display = df[existing_cols].copy()
-
-    # Application du format monétaire
-    for col in ["Montant honoraires (US $)", "Autres frais (US $)", "Montant facturé", "Total payé", "Solde restant"]:
-        if col in df_display.columns:
-            df_display[col] = df_display[col].map(_fmt_money)
-
-    # === Alignement à gauche ===
-    money_cols = ["Montant honoraires (US $)", "Autres frais (US $)", "Montant facturé", "Total payé", "Solde restant"]
-    styles = [
-        {"selector": "th", "props": [("text-align", "left")]},
-        {"selector": "td", "props": [("text-align", "left"), ("padding-left", "12px")]}
-    ]
-
-    styled = (
-        df_display.style
-        .set_table_styles(styles)
-        .set_properties(subset=[c for c in money_cols if c in df_display.columns],
-                        **{"text-align": "left"})
+    st.subheader("Dossiers en escrow")
+    st.dataframe(
+        escrow_df[["Dossier N", "Nom", "Acompte 1", "Escrow"]],
+        use_container_width=True
     )
 
-    st.dataframe(styled, use_container_width=True, height=400)
+    st.subheader("Liste synthétique des clients")
+    st.dataframe(
+        df[["Dossier N", "Nom", "Montant honoraires (US $)", "Acompte 1"]],
+        use_container_width=True
+    )

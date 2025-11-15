@@ -3,77 +3,65 @@ import pandas as pd
 
 
 def _to_bool(v):
-    """Convertit ce qui vient d'Excel en booléen réel."""
+    """Convertit toutes les valeurs Excel possibles en booléen."""
     if isinstance(v, bool):
         return v
-    if isinstance(v, (int, float)):
-        return v == 1
-    if isinstance(v, str):
-        return v.strip().lower() in ["true", "vrai", "1", "yes", "oui", "x"]
-    return False
+    if pd.isna(v):
+        return False
+    
+    v = str(v).strip().lower()
+    return v in ["true", "vrai", "1", "yes", "oui", "x", "✔", "✓"]
 
 
 def _to_num(series):
-    """Convertit une série Excel (avec virgules, espaces, etc.) en float propre."""
+    """Convertit série Excel en float propre, même avec espaces/virgules."""
     return (
         pd.to_numeric(
             series.astype(str)
-                  .str.replace("\u00a0", "", regex=False)  # espace insécable
-                  .str.replace(" ", "", regex=False)      # espaces
-                  .str.replace(",", ".", regex=False),    # virgule -> point
+                  .str.replace("\u00a0", "", regex=False)
+                  .str.replace(" ", "", regex=False)
+                  .str.replace(",", ".", regex=False),
             errors="coerce",
-        )
-        .fillna(0.0)
+        ).fillna(0.0)
     )
 
 
 def tab_escrow():
     st.header("🛡️ Escrow")
 
-    # --- vérif données ---
     if "data_xlsx" not in st.session_state or st.session_state["data_xlsx"] is None:
-        st.warning("Fichier non chargé — veuillez l'importer via l’onglet 📄 Fichiers.")
+        st.warning("⚠️ Fichier non chargé.")
         return
 
     data = st.session_state["data_xlsx"]
-    df_clients = data.get("Clients")
+    df = data.get("Clients")
 
-    if df_clients is None:
-        st.error("La feuille 'Clients' est manquante dans le fichier Excel.")
+    if df is None or df.empty:
+        st.info("Feuille Clients vide.")
         return
 
-    # --- normalisation colonnes nécessaires ---
-    for col in ["Escrow", "Acompte 1", "Montant honoraires (US $)"]:
-        if col not in df_clients.columns:
-            st.error(f"La colonne '{col}' est absente de la feuille Clients.")
-            return
+    # --- Nettoyage ---
+    df = df.copy()
+    
+    df["Escrow"] = df["Escrow"].apply(_to_bool)
+    acompte = _to_num(df["Acompte 1"])
+    honoraires = _to_num(df["Montant honoraires (US $)"])
 
-    # Escrow -> booléen
-    df_clients = df_clients.copy()
-    df_clients["Escrow"] = df_clients["Escrow"].apply(_to_bool)
+    # --- Règles Escrow ---
+    mask_checkbox = df["Escrow"] == True
+    mask_auto = (acompte > 0) & (honoraires == 0)
 
-    # Nombres nettoyés
-    acompte1 = _to_num(df_clients["Acompte 1"])
-    honoraires = _to_num(df_clients["Montant honoraires (US $)"])
-
-    # --- filtre Escrow ---
-    mask_auto = (acompte1 > 0) & (honoraires == 0)
-    mask_flag = df_clients["Escrow"] == True
-
-    df_escrow = df_clients[mask_flag | mask_auto].copy()
+    df_escrow = df[mask_checkbox | mask_auto].copy()
 
     if df_escrow.empty:
         st.info("Aucun dossier en Escrow pour le moment.")
         return
 
-    # --- affichage KPI + tableau ---
     st.subheader("Dossiers en Escrow")
 
-    montant_total = _to_num(df_escrow["Acompte 1"]).sum()
-    st.metric("Montant total", f"{montant_total:,.2f} $")
+    st.metric("Total en attente", f"{acompte[mask_checkbox | mask_auto].sum():,.2f} $")
 
-    # colonnes affichées (si elles existent)
-    cols_aff = [
+    cols = [c for c in [
         "Dossier N",
         "Nom",
         "Categories",
@@ -81,8 +69,7 @@ def tab_escrow():
         "Visa",
         "Acompte 1",
         "Montant honoraires (US $)",
-        "Escrow",
-    ]
-    cols_aff = [c for c in cols_aff if c in df_escrow.columns]
+        "Escrow"
+    ] if c in df.columns]
 
-    st.dataframe(df_escrow[cols_aff].reset_index(drop=True))
+    st.dataframe(df_escrow[cols].reset_index(drop=True))

@@ -11,7 +11,6 @@ def _to_float(value):
         return 0.0
 
 def _to_date(value, default=None):
-    """Convertit Excel vers date ou retourne une date du jour si absent."""
     if value is None or str(value).strip() == "" or pd.isna(value):
         return default if default else datetime.date.today()
     try:
@@ -21,6 +20,7 @@ def _to_date(value, default=None):
         return d.date()
     except Exception:
         return default if default else datetime.date.today()
+
 
 def tab_gestion():
     st.header("✏️ / 🗑️ Gestion d’un dossier")
@@ -66,49 +66,58 @@ def tab_gestion():
         total_facture = montant_hono + autres_frais
         st.markdown(f"**Total facturé : {total_facture:.2f} US $**")
     
-    # Paiements dynamiques
+    # Paiements : acomptes 1 et 2 sur la 1ère ligne, 3 et 4 sur la 2ème ligne
     st.subheader("Paiements / acomptes")
-    acomptes, reste = [], total_facture
-    for i in range(1, 10):  # max 10 acomptes
-        acompte_col = f"Acompte {i}"
-        date_col = f"Date Acompte {i}"
-        if acompte_col in df.columns:
-            v = _to_float(dossier.get(acompte_col, 0.0))
-            d = _to_date(dossier.get(date_col), default=datetime.date.today())
-            reste -= v
-            acomptes.append((
-                st.number_input(f"{acompte_col} (US $)", min_value=0.0, value=v, step=10.0, key=f"acompte_{i}"),
-                st.date_input(f"{date_col}", d, key=f"date_acompte_{i}")
-            ))
-        else:
-            break
 
-    st.markdown(f"**Reste à payer : {reste:.2f} US $**")
+    accomptes_data = []
+    # Acomptes 1 et 2
+    ac1, ac2 = st.columns(2)
+    with ac1:
+        acompte1 = st.number_input("Acompte 1 (US $)", min_value=0.0, value=_to_float(dossier.get("Acompte 1", 0.0)), step=10.0)
+        date_acompte1 = st.date_input("Date Acompte 1", _to_date(dossier.get("Date Acompte 1"), default=datetime.date.today()), key="date_acompte_1")
+        mode1 = st.text_input("Mode règlement Acompte 1", str(dossier.get("Mode de règlement 1", dossier.get("mode de paiement", ""))))
+        accomptes_data.append((acompte1, date_acompte1, mode1))
+    with ac2:
+        acompte2 = st.number_input("Acompte 2 (US $)", min_value=0.0, value=_to_float(dossier.get("Acompte 2", 0.0)), step=10.0)
+        date_acompte2 = st.date_input("Date Acompte 2", _to_date(dossier.get("Date Acompte 2"), default=datetime.date.today()), key="date_acompte_2")
+        mode2 = st.text_input("Mode règlement Acompte 2", str(dossier.get("Mode de règlement 2", "")))
+        accomptes_data.append((acompte2, date_acompte2, mode2))
 
-    if reste > 0 and st.button("Ajouter un acompte supplémentaire"):
-        next_col = f"Acompte {len(acomptes)+1}"
-        next_date_col = f"Date Acompte {len(acomptes)+1}"
-        if next_col not in df.columns:
-            df[next_col] = 0.0
-        if next_date_col not in df.columns:
-            df[next_date_col] = ""
-        st.success("Acompte supplémentaire ajouté. Relancez l’onglet pour le remplir.")
-        save_all()
-        st.rerun()
+    # Acomptes 3 et 4
+    ac3, ac4 = st.columns(2)
+    with ac3:
+        acompte3 = st.number_input("Acompte 3 (US $)", min_value=0.0, value=_to_float(dossier.get("Acompte 3", 0.0)), step=10.0)
+        date_acompte3 = st.date_input("Date Acompte 3", _to_date(dossier.get("Date Acompte 3"), default=datetime.date.today()), key="date_acompte_3")
+        mode3 = st.text_input("Mode règlement Acompte 3", str(dossier.get("Mode de règlement 3", "")))
+        accomptes_data.append((acompte3, date_acompte3, mode3))
+    with ac4:
+        acompte4 = st.number_input("Acompte 4 (US $)", min_value=0.0, value=_to_float(dossier.get("Acompte 4", 0.0)), step=10.0)
+        date_acompte4 = st.date_input("Date Acompte 4", _to_date(dossier.get("Date Acompte 4"), default=datetime.date.today()), key="date_acompte_4")
+        mode4 = st.text_input("Mode règlement Acompte 4", str(dossier.get("Mode de règlement 4", "")))
+        accomptes_data.append((acompte4, date_acompte4, mode4))
 
-    # Statuts & dates
-    st.subheader("Dates de suivi")
-    colA, colB = st.columns(2)
-    with colA:
-        date_envoye = st.date_input("Date dossier envoyé", _to_date(dossier.get("Date envoi"), default=datetime.date.today()))
-        date_accepte = st.date_input("Date dossier accepté", _to_date(dossier.get("Date acceptation"), default=datetime.date.today()))
-        date_refuse = st.date_input("Date dossier refusé", _to_date(dossier.get("Date refus"), default=datetime.date.today()))
-        date_annule = st.date_input("Date dossier annulé", _to_date(dossier.get("Date annulation"), default=datetime.date.today()))
-        date_rfe = st.date_input("Date RFE", _to_date(dossier.get("Date Acompte 1"), default=datetime.date.today())) # adapte si tu veux une autre colonne
+    # Calcul du reste à payer
+    reste_total = total_facture - sum(x[0] for x in accomptes_data)
+    st.markdown(f"**Reste à payer : {reste_total:.2f} US $**")
 
-    with colB:
-        rfe = st.checkbox("RFE", value=bool(dossier.get("RFE", False)))
-        commentaires = st.text_area("Commentaires", value=str(dossier.get("Commentaires", "")), height=80)
+    # Statuts & suivi
+    st.subheader("Statut & suivi du dossier")
+    su1, su2, su3, su4 = st.columns(4)
+    with su1:
+        dossier_envoye = st.checkbox("Dossier envoyé", value=bool(dossier.get("Dossier envoyé", False)))
+        date_envoye = st.date_input("Date envoi", _to_date(dossier.get("Date envoi"), default=datetime.date.today()), key="date_envoye")
+    with su2:
+        dossier_accepte = st.checkbox("Dossier accepté", value=bool(dossier.get("Dossier accepté", False)))
+        date_accepte = st.date_input("Date acceptation", _to_date(dossier.get("Date acceptation"), default=datetime.date.today()), key="date_accepte")
+    with su3:
+        dossier_refuse = st.checkbox("Dossier refusé", value=bool(dossier.get("Dossier refusé", False)))
+        date_refuse = st.date_input("Date refus", _to_date(dossier.get("Date refus"), default=datetime.date.today()), key="date_refuse")
+    with su4:
+        dossier_annule = st.checkbox("Dossier annulé", value=bool(dossier.get("Dossier Annulé", False)))
+        date_annule = st.date_input("Date annulation", _to_date(dossier.get("Date annulation"), default=datetime.date.today()), key="date_annulation")
+
+    rfe = st.checkbox("RFE", value=bool(dossier.get("RFE", False)))
+    commentaires = st.text_area("Commentaires", value=str(dossier.get("Commentaires", "")), height=80)
 
     st.subheader("Actions")
     modif = st.button("💾 Enregistrer les modifications")
@@ -121,12 +130,17 @@ def tab_gestion():
         df.loc[idx, "Visa"] = visa
         df.loc[idx, "Montant honoraires (US $)"] = montant_hono
         df.loc[idx, "Autres frais (US $)"] = autres_frais
-        for i, (acompte_val, date_val) in enumerate(acomptes, start=1):
+        for i, (acompte_val, date_val, mode_val) in enumerate(accomptes_data, start=1):
             df.loc[idx, f"Acompte {i}"] = acompte_val
             df.loc[idx, f"Date Acompte {i}"] = pd.to_datetime(date_val) if date_val else ""
+            df.loc[idx, f"Mode de règlement {i}"] = mode_val
+        df.loc[idx, "Dossier envoyé"] = bool(dossier_envoye)
         df.loc[idx, "Date envoi"] = pd.to_datetime(date_envoye) if date_envoye else ""
+        df.loc[idx, "Dossier accepté"] = bool(dossier_accepte)
         df.loc[idx, "Date acceptation"] = pd.to_datetime(date_accepte) if date_accepte else ""
+        df.loc[idx, "Dossier refusé"] = bool(dossier_refuse)
         df.loc[idx, "Date refus"] = pd.to_datetime(date_refuse) if date_refuse else ""
+        df.loc[idx, "Dossier Annulé"] = bool(dossier_annule)
         df.loc[idx, "Date annulation"] = pd.to_datetime(date_annule) if date_annule else ""
         df.loc[idx, "RFE"] = bool(rfe)
         df.loc[idx, "Commentaires"] = commentaires

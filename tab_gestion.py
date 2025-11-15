@@ -319,9 +319,10 @@ def tab_gestion():
             st.session_state["data_xlsx"] = data
 
             # sauvegarde via common_data
-            save_all(data)
+            save_all()
 
             st.success("✅ Modifications enregistrées.")
             st.rerun()
         except Exception as e:
             st.error(f"❌ Erreur : {e}")
+

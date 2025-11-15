@@ -65,30 +65,39 @@ def tab_ajouter():
         date_acompte1 = st.date_input("Date Acompte 1")
 
     escrow = st.checkbox("Mettre le dossier en Escrow")
-
-    st.subheader("Statut du dossier")
-    statut_cols = st.columns(4)
-    with statut_cols[0]:
-        dossier_envoye = st.checkbox("Dossier envoyé")
-        date_envoye = st.date_input("Date envoi") if dossier_envoye else None
-    with statut_cols[1]:
-        dossier_accepte = st.checkbox("Dossier accepté")
-        date_acceptation = st.date_input("Date acceptation") if dossier_accepte else None
-    with statut_cols[2]:
-        dossier_refuse = st.checkbox("Dossier refusé")
-        date_refus = st.date_input("Date refus") if dossier_refuse else None
-    with statut_cols[3]:
-        dossier_annule = st.checkbox("Dossier Annulé")
-        date_annulation = st.date_input("Date annulation") if dossier_annule else None
-
-    statut_active = any([dossier_envoye, dossier_accepte, dossier_refuse, dossier_annule])
-    if statut_active:
-        rfe = st.checkbox("RFE")
-    else:
-        rfe = False
-
     commentaires = st.text_area("Commentaires")
 
+    # ---------- Tableau des dossiers existants avec filtres ----------
+    st.subheader("Liste des dossiers existants")
+    # Filtres basiques
+    df_filtered = df.copy()
+    filt_cols = st.columns(4)
+    with filt_cols[0]:
+        nom_filtre = st.text_input("Filtrer par nom", "")
+        if nom_filtre:
+            df_filtered = df_filtered[df_filtered["Nom"].str.lower().str.contains(nom_filtre.lower())]
+    with filt_cols[1]:
+        cat_filtre = st.text_input("Filtrer par catégories", "")
+        if cat_filtre:
+            df_filtered = df_filtered[df_filtered["Catégories"].str.lower().str.contains(cat_filtre.lower())]
+    with filt_cols[2]:
+        visa_filtre = st.text_input("Filtrer par visa", "")
+        if visa_filtre:
+            df_filtered = df_filtered[df_filtered["Visa"].str.lower().str.contains(visa_filtre.lower())]
+    with filt_cols[3]:
+        montant_min = st.number_input("Montant min facturé", min_value=0.0, value=0.0)
+        df_filtered = df_filtered[df_filtered["Montant honoraires (US $)"] >= montant_min]
+
+    # Affichage tableau résumé
+    display_cols = [
+        "Dossier N", "Nom", "Catégories", "Sous-catégories", "Visa",
+        "Montant honoraires (US $)", "Autres frais (US $)", "Total facture",
+        "Acompte 1", "Date Acompte 1", "mode de paiement", "Escrow", "Commentaires"
+    ]
+    existing_cols = [c for c in display_cols if c in df_filtered.columns]
+    st.dataframe(df_filtered[existing_cols], use_container_width=True)
+
+    # ---------- Enregistrement dossier ----------
     if st.button("💾 Enregistrer le dossier"):
         new_row = {
             "Dossier N": next_id,
@@ -110,15 +119,6 @@ def tab_ajouter():
             "Date Acompte 3": "",
             "Acompte 4": "",
             "Date Acompte 4": "",
-            "Dossier envoyé": dossier_envoye,
-            "Date envoi": pd.to_datetime(date_envoye) if date_envoye else pd.NaT,
-            "Dossier accepté": dossier_accepte,
-            "Date acceptation": pd.to_datetime(date_acceptation) if date_acceptation else pd.NaT,
-            "Dossier refusé": dossier_refuse,
-            "Date refus": pd.to_datetime(date_refus) if date_refus else pd.NaT,
-            "Dossier Annulé": dossier_annule,
-            "Date annulation": pd.to_datetime(date_annulation) if date_annulation else pd.NaT,
-            "RFE": rfe,
             "Commentaires": commentaires,
         }
 

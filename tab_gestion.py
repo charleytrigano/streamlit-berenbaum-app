@@ -1,5 +1,9 @@
 import streamlit as st
 import pandas as pd
+
+def tab_gestion():
+    st.write("Test de l'appel à tab_gestion : tout fonctionne !")import streamlit as st
+import pandas as pd
 import os
 
 DATA_PATH = r"C:\Users\charl\Mon Drive\streamlit-berenbaum-app\Clients BL.xlsx"
@@ -16,3 +20,4 @@ def ensure_loaded():
         st.error(f"Erreur lors du chargement Excel : {e}")
         return None
     return {"Clients": df_clients}
+

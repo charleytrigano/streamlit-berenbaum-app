@@ -2,18 +2,24 @@ import streamlit as st
 import pandas as pd
 import os
 
-DATA_PATH = "clients.xlsx"  # Chemin du fichier Excel
+DATA_PATH = "clients.xlsx"  # Chemin à adapter si nécessaire
 
 def ensure_loaded():
     try:
         df_clients = pd.read_excel(DATA_PATH)
-    except Exception:
-        df_clients = pd.DataFrame()
+        if df_clients.empty:
+            return None
+    except Exception as e:
+        st.error(f"Erreur lors du chargement Excel : {e}")
+        return None
     return {"Clients": df_clients}
 
 def save_data(data):
     df = data.get("Clients", pd.DataFrame())
-    df.to_excel(DATA_PATH, index=False)
+    try:
+        df.to_excel(DATA_PATH, index=False)
+    except Exception as e:
+        st.error(f"Erreur sauvegarde Excel: {e}")
 
 def format_checkbox(val):
     return str(val).strip().lower() in ["true", "1", "vrai", "oui", "x", "ok"]
@@ -30,7 +36,7 @@ def tab_gestion():
 
     st.info("Modifiez chaque dossier puis enregistrez vos modifications une à une.")
 
-    # Liste des champs à éditer
+    # Champs à éditer : adapte selon ton fichier Excel
     base_champs = [
         ("Dossier N", "text"),
         ("Nom", "text"),
@@ -51,7 +57,6 @@ def tab_gestion():
         ("Date envoi", "text"),
         ("Escrow", "checkbox"),
         ("Commentaires", "text"),
-        # Ajoute ici tout champ supplémentaire selon ton fichier Excel
     ]
 
     for idx, row in df.iterrows():
@@ -60,20 +65,13 @@ def tab_gestion():
             for champ, typ in base_champs:
                 default = str(row.get(champ, ""))
                 if typ == "checkbox":
-                    vals[champ] = st.checkbox(
-                        champ,
-                        value=format_checkbox(default),
-                        key=f"{champ}_{idx}")
+                    vals[champ] = st.checkbox(champ, value=format_checkbox(default), key=f"{champ}_{idx}")
                 else:
                     vals[champ] = st.text_input(champ, value=default, key=f"{champ}_{idx}")
 
-            # Enregistrement
             if st.button(f"Enregistrer ce dossier", key=f"save_{idx}"):
                 for champ, typ in base_champs:
-                    if typ == "checkbox":
-                        df.at[idx, champ] = vals[champ]
-                    else:
-                        df.at[idx, champ] = vals[champ]
+                    df.at[idx, champ] = vals[champ]
                 save_flag = True
                 st.success(f"Dossier N°{row.get('Dossier N', idx)} mis à jour.")
 
@@ -83,11 +81,5 @@ def tab_gestion():
         st.info("Les modifications ont été sauvegardées.")
 
     st.subheader("Aperçu synthétique des dossiers")
-    synth_cols = [
-        "Dossier N", "Nom", "Catégories", "Visa",
-        "Montant honoraires (US $)", "Autres frais (US $)",
-        "Acompte 1", "Acompte 2", "Acompte 3", "Acompte 4",
-        "Dossier envoyé", "Escrow"
-    ]
-    available_columns = [col for col in synth_cols if col in df.columns]
-    st.dataframe(df[available_columns], use_container_width=True)
+    synth_cols = [col for col, _ in base_champs if col in df.columns]
+    st.dataframe(df[synth_cols], use_container_width=True)

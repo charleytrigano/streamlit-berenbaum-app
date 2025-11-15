@@ -1,142 +1,84 @@
 import streamlit as st
 import pandas as pd
-from common_data import ensure_loaded, save_all, MAIN_FILE
+from common_data import ensure_loaded
 
 
-def _to_float(s):
-    try:
-        return float(str(s).replace(" ", "").replace(",", "."))
-    except Exception:
-        return 0.0
+def _to_bool(value):
+    if isinstance(value, bool):
+        return value
+    s = str(value).strip().lower()
+    return s in ("1", "true", "vrai", "oui", "yes", "x")
 
 
 def tab_escrow():
     st.header("🛡️ Escrow")
 
-    data = ensure_loaded(MAIN_FILE)
+    data = ensure_loaded()
     if data is None:
+        st.warning("Aucune donnée chargée. Importe le fichier via 📄 Fichiers.")
         return
 
-    df = data.get("Clients", pd.DataFrame()).copy()
+    df = data["Clients"].copy()
     if df.empty:
-        st.info("Aucun dossier client disponible.")
+        st.info("Aucun dossier dans la feuille Clients.")
         return
 
-    # S'assurer que toutes les colonnes existent
-    for col in [
-        "Dossier N",
-        "Nom",
-        "Escrow",
-        "Acompte 1",
-        "Montant honoraires (US $)",
-        "Dossier envoyé",
-        "Date envoi",
-    ]:
-        if col not in df.columns:
-            df[col] = pd.NA
+    # Colonnes numériques utiles
+    hono = pd.to_numeric(df["Montant honoraires (US $)"], errors="coerce").fillna(0.0)
+    ac1 = pd.to_numeric(df["Acompte 1"], errors="coerce").fillna(0.0)
 
-    # Numériques propres
-    df["Acompte 1"] = df["Acompte 1"].map(_to_float)
-    df["Montant honoraires (US $)"] = df["Montant honoraires (US $)"].map(_to_float)
+    # Escrow manuel (case cochée)
+    escrow_manual = df["Escrow"].apply(_to_bool)
 
-    # Normalisation Escrow -> bool
-    def _to_bool(x):
-        if isinstance(x, bool):
-            return x
-        s = str(x).strip().lower()
-        return s in {"1", "x", "oui", "true", "vrai"}
+    # Escrow automatique : Acompte 1 > 0 et honoraires == 0
+    escrow_auto = (ac1 > 0) & (hono == 0)
 
-    df["Escrow"] = df["Escrow"].apply(_to_bool)
+    escrow_mask = escrow_manual | escrow_auto
+    df_escrow = df[escrow_mask].copy()
 
-    # Règle automatique : Acompte 1 > 0 et Montant honoraires = 0 => Escrow = True
-    auto_mask = (df["Acompte 1"] > 0) & (df["Montant honoraires (US $)"] == 0)
-    df.loc[auto_mask, "Escrow"] = True
+    if df_escrow.empty:
+        st.info("Aucun dossier en Escrow pour le moment.")
+        return
 
-    # Séparation A RECLAMER / RECLAMES
-    df_escrow = df[df["Escrow"] == True].copy()
-
-    def _sent_bool(x):
-        if isinstance(x, bool):
-            return x
-        s = str(x).strip().lower()
-        return s in {"1", "x", "oui", "true", "vrai"}
-
-    df_escrow["Dossier envoyé"] = df_escrow["Dossier envoyé"].apply(_sent_bool)
-
-    a_reclamer = df_escrow[df_escrow["Dossier envoyé"] != True].copy()
-    reclames = df_escrow[df_escrow["Dossier envoyé"] == True].copy()
-
-    # KPIs
-    total_montant = df_escrow["Acompte 1"].sum()
+    # KPI
     nb_dossiers = len(df_escrow)
+    total_acompte = ac1[escrow_mask].sum()
 
     c1, c2 = st.columns(2)
     with c1:
         st.metric("Nombre de dossiers en Escrow", nb_dossiers)
     with c2:
-        st.metric("Montant total en Escrow", f"{total_montant:,.2f} $")
+        st.metric("Total Acompte 1 (Escrow)", f"{total_acompte:,.2f} $")
 
-    # LISTE A RECLAMER
-    st.subheader("📌 Dossiers en Escrow à réclamer")
-    if a_reclamer.empty:
-        st.info("Aucun dossier à réclamer pour le moment.")
-    else:
-        cols = ["Dossier N", "Nom", "Acompte 1"]
-        for c in cols:
-            if c not in a_reclamer.columns:
-                a_reclamer[c] = ""
-        st.dataframe(
-            a_reclamer[cols].sort_values("Dossier N"),
-            use_container_width=True,
-        )
+    # Tableau des dossiers en Escrow
+    cols_aff = [
+        "Dossier N",
+        "Nom",
+        "Date",
+        "Catégories",
+        "Sous-catégories",
+        "Visa",
+        "Montant honoraires (US $)",
+        "Acompte 1",
+        "Date Acompte 1",
+        "mode de paiement",
+        "Escrow",
+        "Dossier envoyé",
+        "Date envoi",
+        "Dossier accepté",
+        "Dossier refusé",
+        "Dossier Annulé",
+        "RFE",
+    ]
+    cols_exist = [c for c in cols_aff if c in df_escrow.columns]
 
-    st.markdown("---")
-
-    # Marquer comme "Dossier envoyé"
-    st.subheader("✉️ Marquer un dossier comme envoyé")
-    col_num, col_date, col_btn = st.columns([1, 1, 1])
-
-    with col_num:
-        num_envoye = st.text_input("Dossier N", key="escrow_num_envoye")
-
-    with col_date:
-        date_envoi = st.date_input("Date envoi", key="escrow_date_envoi")
-
-    with col_btn:
-        if st.button("✅ Valider l'envoi", key="escrow_btn_envoye"):
-            if num_envoye.strip():
-                mask = df["Dossier N"].astype(str) == num_envoye.strip()
-                if mask.any():
-                    idx = df[mask].index[0]
-                    df.at[idx, "Dossier envoyé"] = True
-                    df.at[idx, "Date envoi"] = pd.to_datetime(date_envoi)
-                    # on replace dans data_xlsx et on sauvegarde
-                    data["Clients"] = df
-                    st.session_state["data_xlsx"] = data
-                    save_all()
-                    st.success(f"Dossier {num_envoye} marqué comme envoyé.")
-                else:
-                    st.warning("Dossier introuvable.")
-            else:
-                st.warning("Merci de saisir un numéro de dossier.")
-
-    st.markdown("---")
-
-    # LISTE RECLAMES
-    st.subheader("📬 Dossiers Escrow réclamés (envoyés)")
-    if reclames.empty:
-        st.info("Aucun dossier Escrow réclamé pour le moment.")
-    else:
-        cols_r = ["Dossier N", "Nom", "Acompte 1", "Date envoi"]
-        for c in cols_r:
-            if c not in reclames.columns:
-                reclames[c] = ""
-        # Date envoi joli format
-        if "Date envoi" in reclames.columns:
-            reclames["Date envoi"] = pd.to_datetime(
-                reclames["Date envoi"], errors="coerce"
-            ).dt.strftime("%Y-%m-%d")
-        st.dataframe(
-            reclames[cols_r].sort_values("Dossier N"),
-            use_container_width=True,
-        )
+    st.markdown("### Liste des dossiers en Escrow")
+    st.dataframe(
+        df_escrow[cols_exist].style.format(
+            {
+                "Montant honoraires (US $)": "{:,.2f}",
+                "Acompte 1": "{:,.2f}",
+            }
+        ),
+        use_container_width=True,
+    )

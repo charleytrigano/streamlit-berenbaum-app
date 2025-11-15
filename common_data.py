@@ -2,10 +2,9 @@ import streamlit as st
 import pandas as pd
 import io
 
-# Nom du fichier principal
 MAIN_FILE = "Clients BL.xlsx"
 
-# Colonnes attendues dans la feuille Clients
+# Colonnes EXACTES de ta feuille "Clients"
 CLIENTS_COLUMNS = [
     "Dossier N",
     "Nom",
@@ -44,101 +43,82 @@ DEFAULT_SHEETS = {
     "Escrow": [],
 }
 
-# Petit mapping générique si certains onglets utilisent encore column_map
-column_map = {
-    "dossier": "Dossier N",
-    "nom": "Nom",
-    "date": "Date",
-    "categorie": "Catégories",
-    "sous_categorie": "Sous-catégories",
-    "visa": "Visa",
-    "honoraires": "Montant honoraires (US $)",
-    "autres_frais": "Autres frais (US $)",
-    "acompte1": "Acompte 1",
-    "date_acompte1": "Date Acompte 1",
-    "mode_paiement": "mode de paiement",
-    "escrow": "Escrow",
-}
-
 
 def _ensure_clients_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """Ajoute les colonnes manquantes dans Clients avec valeurs vides."""
+    """Force les colonnes de Clients dans le bon ordre, en ajoutant les manquantes."""
     for col in CLIENTS_COLUMNS:
         if col not in df.columns:
             df[col] = pd.NA
-    # On garde l'ordre officiel
-    return df[CLIENTS_COLUMNS]
+    # on garde aussi les colonnes inconnues, mais on remet l'ordre officiel en premier
+    known = df[CLIENTS_COLUMNS]
+    extras = [c for c in df.columns if c not in CLIENTS_COLUMNS]
+    if extras:
+        return pd.concat([known, df[extras]], axis=1)
+    return known
 
 
-def load_xlsx(file_bytes: bytes):
-    """Charge un XLSX uploadé via Streamlit et garantit la présence des 4 feuilles."""
+def load_xlsx(uploaded_file):
+    """Charge un fichier XLSX uploadé et le met dans st.session_state['data_xlsx']."""
     try:
+        file_bytes = uploaded_file.read()
         xls = pd.ExcelFile(io.BytesIO(file_bytes))
         data = {}
 
-        # Feuille Clients
-        if "Clients" in xls.sheet_names:
-            df_clients = pd.read_excel(xls, sheet_name="Clients")
-            df_clients = _ensure_clients_columns(df_clients)
-        else:
-            df_clients = pd.DataFrame(columns=CLIENTS_COLUMNS)
-        data["Clients"] = df_clients
-
-        # Autres feuilles : on charge si elles existent, sinon DataFrame vide
-        for sheet in ["Visa", "ComptaCli", "Escrow"]:
+        for sheet, cols in DEFAULT_SHEETS.items():
             if sheet in xls.sheet_names:
-                data[sheet] = pd.read_excel(xls, sheet_name=sheet)
+                df = pd.read_excel(xls, sheet_name=sheet)
             else:
-                data[sheet] = pd.DataFrame()
+                df = pd.DataFrame(columns=cols)
 
+            if sheet == "Clients":
+                df = _ensure_clients_columns(df)
+
+            data[sheet] = df
+
+        st.session_state["data_xlsx"] = data
+        st.session_state["filename"] = uploaded_file.name
+        st.success(f"✅ Fichier « {uploaded_file.name} » importé.")
         return data
-
     except Exception as e:
-        st.error(f"Erreur lecture XLSX : {e}")
+        st.error(f"❌ Erreur lecture XLSX : {e}")
         return None
 
 
-def save_all_local(data_dict: dict) -> bool:
+def save_all_local() -> bool:
     """
-    Sauvegarde l'état actuel (data_xlsx) dans un fichier Excel en mémoire.
-    Le résultat binaire est conservé dans st.session_state["last_saved_file"].
+    Sauvegarde les données de st.session_state['data_xlsx'] dans un XLSX en mémoire,
+    et stocke les bytes dans st.session_state['last_saved_file'].
     """
+    if "data_xlsx" not in st.session_state:
+        st.error("❌ Impossible de sauvegarder : aucune donnée chargée.")
+        return False
+
+    data_dict = st.session_state["data_xlsx"]
+
     try:
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-            for sheet_name, df in data_dict.items():
-                if not isinstance(df, pd.DataFrame):
-                    df = pd.DataFrame()
-                if df.empty:
-                    # Pour éviter "At least one sheet must be visible"
-                    df = pd.DataFrame({" ": []})
-                df.to_excel(writer, sheet_name=sheet_name, index=False)
+            for sheet, df in data_dict.items():
+                if isinstance(df, pd.DataFrame) and not df.empty:
+                    df.to_excel(writer, sheet_name=sheet, index=False)
+                else:
+                    # Excel impose au moins une feuille visible
+                    pd.DataFrame({" ": []}).to_excel(writer, sheet_name=sheet, index=False)
 
         output.seek(0)
         st.session_state["last_saved_file"] = output.getvalue()
+        st.success("💾 Sauvegarde en mémoire effectuée.")
         return True
     except Exception as e:
-        st.error(f"Erreur sauvegarde locale : {e}")
+        st.error(f"❌ Erreur sauvegarde locale : {e}")
         return False
 
 
-def save_all():
-    """
-    Sauvegarde simple : utilise st.session_state["data_xlsx"] et save_all_local.
-    (Signature sans argument, comme attendu par tes onglets.)
-    """
-    if "data_xlsx" not in st.session_state or st.session_state["data_xlsx"] is None:
-        st.error("❌ Impossible de sauvegarder : aucune donnée chargée.")
-        return False
-    return save_all_local(st.session_state["data_xlsx"])
+def save_all() -> bool:
+    """Raccourci : sauvegarde ce qu'il y a dans data_xlsx."""
+    return save_all_local()
 
 
-def ensure_loaded(filename: str):
-    """
-    Renvoie st.session_state['data_xlsx'] si déjà chargé.
-    NE charge rien tout seul : c'est l'onglet Fichiers qui fait le upload.
-    """
-    if "data_xlsx" in st.session_state and st.session_state["data_xlsx"] is not None:
-        return st.session_state["data_xlsx"]
-    st.warning("⚠️ Fichier non chargé — importe d’abord le XLSX via l’onglet 📄 Fichiers.")
-    return None
+def ensure_loaded():
+    """Retourne le dict de feuilles ou None si rien n'est chargé."""
+    return st.session_state.get("data_xlsx")

@@ -1,4 +1,4 @@
-import streamlit as st
+save_all()import streamlit as st
 import pandas as pd
 from datetime import date
 from common_data import ensure_loaded, save_all, CLIENTS_COLUMNS

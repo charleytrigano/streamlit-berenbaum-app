@@ -25,7 +25,7 @@ def _to_float(value):
 def tab_gestion():
     st.header("✏️ / 🗑️ Gestion d’un dossier")
 
-    data = ensure_loaded(MAIN_FILE)
+    data = ensure_loaded()
     if data is None:
         st.warning("Aucun fichier chargé.")
         return
@@ -325,4 +325,5 @@ def tab_gestion():
             st.rerun()
         except Exception as e:
             st.error(f"❌ Erreur : {e}")
+
 

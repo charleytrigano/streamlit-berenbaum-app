@@ -1,57 +1,47 @@
 import streamlit as st
-from common_data import load_xlsx, save_all_local, MAIN_FILE
-
+from common_data import load_xlsx, save_all, MAIN_FILE
 
 def tab_fichiers():
     st.header("📄 Gestion des fichiers")
 
-    # Initialiser session_state si manquant
-    if "data_xlsx" not in st.session_state:
-        st.session_state["data_xlsx"] = None
-
-    uploaded = st.file_uploader("Importer un fichier Excel (.xlsx)", type=["xlsx"])
+    # --- IMPORT FICHIER ---
+    uploaded = st.file_uploader("Importer un fichier Excel (.xlsx)", type="xlsx")
 
     if uploaded:
-        file_bytes = uploaded.read()
+        file_bytes = uploaded.getvalue()
         data = load_xlsx(file_bytes)
 
-        if data is None:
-            st.error("❌ Erreur lors de la lecture du fichier.")
-            return
+        if data is not None:
+            st.session_state["data_xlsx"] = data
+            st.success("✅ Fichier chargé avec succès et disponible dans l’application.")
 
-        st.session_state["data_xlsx"] = data
-        st.success("✅ Fichier chargé avec succès !")
-
-        # Sauvegarde locale immédiate (en mémoire)
-        save_all_local(data)
-
-    # Si aucun fichier n’est encore chargé
-    if st.session_state["data_xlsx"] is None:
-        st.warning("⚠️ Aucun fichier chargé. Veuillez importer un XLSX.")
+    # --- SI PAS DE FICHIER ---
+    if "data_xlsx" not in st.session_state:
+        st.info("Aucun fichier chargé pour le moment.")
         return
 
-    # Récupération des données
     data = st.session_state["data_xlsx"]
 
-    # Sécurité : vérifier bien que c'est un dict
-    if not isinstance(data, dict):
-        st.error("❌ Données corrompues en mémoire. Veuillez réimporter le fichier.")
-        st.session_state["data_xlsx"] = None
-        return
-
-    # Affichage des feuilles détectées
+    # Liste des feuilles détectées
+    st.subheader("📑 Feuilles détectées")
     sheet_names = list(data.keys())
-    st.write("📑 **Feuilles disponibles :**", ", ".join(sheet_names))
+    st.write(", ".join(sheet_names))
 
-    # Aperçu des feuilles
-    selected = st.selectbox("Afficher une feuille :", sheet_names)
+    # Aperçu
+    selected_sheet = st.selectbox("Afficher une feuille", sheet_names)
 
-    df_preview = data[selected]
+    df = data[selected_sheet]
+    st.dataframe(df, use_container_width=True)
 
-    st.subheader(f"Aperçu : {selected}")
-    st.dataframe(df_preview)
+    # --- SAUVEGARDE ---
+    st.subheader("💾 Sauvegarde du fichier")
 
-    # Bouton de sauvegarde (simple)
-    if st.button("💾 Sauvegarder localement"):
-        if save_all_local(st.session_state["data_xlsx"]):
-            st.success("✔️ Sauvegarde locale effectuée !")
+    if st.button("Sauvegarder localement"):
+        if save_all():
+            st.success("Fichier sauvegardé dans la session.")
+            st.download_button(
+                "⬇️ Télécharger le fichier sauvegardé",
+                data=st.session_state["last_saved_file"],
+                file_name=MAIN_FILE,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )

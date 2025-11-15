@@ -3,17 +3,12 @@ import pandas as pd
 from common_data import ensure_loaded
 
 def format_kpi(value):
-    # Affichage compact : 1500 → 1.5k, 1500000 → 1.5M
+    # Affiche le total sous forme entière avec des virgules pour séparer les milliers
     try:
         value = float(value)
     except:
         value = 0
-    if abs(value) >= 1_000_000:
-        return f"{value/1_000_000:.1f}M"
-    elif abs(value) >= 1_000:
-        return f"{value/1_000:.1f}k"
-    else:
-        return f"{value:,.0f}"
+    return f"{value:,.0f}"
 
 def tab_dashboard():
     st.header("📊 Dashboard")
@@ -76,7 +71,7 @@ def tab_dashboard():
     if "Acompte 3" in df.columns: total_acomptes += df["Acompte 3"].sum()
     if "Acompte 4" in df.columns: total_acomptes += df["Acompte 4"].sum()
 
-    # KPIs (affichage compact et police réduite)
+    # KPIs (affichage valeurs entières ! plus d'affichage compact)
     st.subheader("Indicateurs clefs (KPI)")
     col1, col2, col3 = st.columns(3)
     with col1:

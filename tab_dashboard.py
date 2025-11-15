@@ -2,6 +2,10 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from common_data import ensure_loaded
+import streamlit as st
+
+def tab_dashboard():
+    st.write("Dashboard OK")
 
 def tab_escrow():
     st.header("🛡️ Escrow – Suivi des dossiers")
@@ -98,3 +102,4 @@ def tab_escrow():
         ],
         use_container_width=True
     )
+

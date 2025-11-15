@@ -2,11 +2,9 @@ import streamlit as st
 import pandas as pd
 import os
 
-# Chemin de stockage (à adapter selon ton infra)
-DATA_PATH = "clients.xlsx"  # Peut être modifié
+DATA_PATH = "clients.xlsx"  # Chemin du fichier Excel
 
 def ensure_loaded():
-    # Charge ou crée le DataFrame client
     try:
         df_clients = pd.read_excel(DATA_PATH)
     except Exception:
@@ -39,10 +37,6 @@ def tab_gestion():
         ("Catégories", "text"),
         ("Sous-catégories", "text"),
         ("Visa", "text"),
-        ("Statut", "text"),
-        ("Commentaires", "text"),
-        ("Pièces reçues", "text"),
-        ("Pièces manquantes", "text"),
         ("Montant honoraires (US $)", "text"),
         ("Autres frais (US $)", "text"),
         ("Acompte 1", "text"),
@@ -56,7 +50,8 @@ def tab_gestion():
         ("Dossier envoyé", "checkbox"),
         ("Date envoi", "text"),
         ("Escrow", "checkbox"),
-        # Ajoute ici tout champ supplémentaire
+        ("Commentaires", "text"),
+        # Ajoute ici tout champ supplémentaire selon ton fichier Excel
     ]
 
     for idx, row in df.iterrows():
@@ -87,11 +82,9 @@ def tab_gestion():
         save_data(data)
         st.info("Les modifications ont été sauvegardées.")
 
-    # Aperçu synthétique
     st.subheader("Aperçu synthétique des dossiers")
-    # Choix des colonnes à afficher en synthèse
     synth_cols = [
-        "Dossier N", "Nom", "Statut",
+        "Dossier N", "Nom", "Catégories", "Visa",
         "Montant honoraires (US $)", "Autres frais (US $)",
         "Acompte 1", "Acompte 2", "Acompte 3", "Acompte 4",
         "Dossier envoyé", "Escrow"

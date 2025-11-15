@@ -38,11 +38,17 @@ def tab_ajouter():
         total_facture = montant + autres_frais
         st.metric("Total facturé (US $)", f"{total_facture:,.2f}")
 
+    # Modes de paiement sur une ligne
     st.subheader("Mode de paiement")
-    pm_cheque = st.checkbox("Chèque")
-    pm_cb = st.checkbox("CB")
-    pm_vir = st.checkbox("Virement")
-    pm_venmo = st.checkbox("Venmo")
+    pm_cols = st.columns(4)
+    with pm_cols[0]:
+        pm_cheque = st.checkbox("Chèque")
+    with pm_cols[1]:
+        pm_cb = st.checkbox("CB")
+    with pm_cols[2]:
+        pm_vir = st.checkbox("Virement")
+    with pm_cols[3]:
+        pm_venmo = st.checkbox("Venmo")
 
     mode_paiement = []
     if pm_cheque: mode_paiement.append("Chèque")

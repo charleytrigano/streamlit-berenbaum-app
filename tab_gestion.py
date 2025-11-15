@@ -2,14 +2,11 @@ import streamlit as st
 import pandas as pd
 import os
 
-# -----------------------------------------------
-# Fonctions utilitaires pour charger et sauvegarder (fallback si common_data absent)
-# -----------------------------------------------
-
-DATA_PATH = "clients.xlsx"  # adapte si besoin
+# Chemin de stockage (à adapter selon ton infra)
+DATA_PATH = "clients.xlsx"  # Peut être modifié
 
 def ensure_loaded():
-    # Charge un Excel "Clients" ou DataFrame vide si absent
+    # Charge ou crée le DataFrame client
     try:
         df_clients = pd.read_excel(DATA_PATH)
     except Exception:
@@ -17,72 +14,87 @@ def ensure_loaded():
     return {"Clients": df_clients}
 
 def save_data(data):
-    # Sauvegarde le DataFrame "Clients"
     df = data.get("Clients", pd.DataFrame())
     df.to_excel(DATA_PATH, index=False)
 
-# -----------------------------------------------
-# Fonction principale de gestion
-# -----------------------------------------------
+def format_checkbox(val):
+    return str(val).strip().lower() in ["true", "1", "vrai", "oui", "x", "ok"]
 
 def tab_gestion():
     st.header("📝 Gestion des dossiers clients")
-
     data = ensure_loaded()
     if data is None or "Clients" not in data or data["Clients"].empty:
         st.error("Aucune donnée client chargée.")
         return
 
     df = data["Clients"].copy()
-    save_flag = False  # Pour signaler modif(s)
+    save_flag = False
 
-    st.info("Modifiez les dossiers ci-dessous. Cliquez sur 'Enregistrer ce dossier' à chaque modification.")
+    st.info("Modifiez chaque dossier puis enregistrez vos modifications une à une.")
 
-    # Edition dossier par dossier
+    # Liste des champs à éditer
+    base_champs = [
+        ("Dossier N", "text"),
+        ("Nom", "text"),
+        ("Catégories", "text"),
+        ("Sous-catégories", "text"),
+        ("Visa", "text"),
+        ("Statut", "text"),
+        ("Commentaires", "text"),
+        ("Pièces reçues", "text"),
+        ("Pièces manquantes", "text"),
+        ("Montant honoraires (US $)", "text"),
+        ("Autres frais (US $)", "text"),
+        ("Acompte 1", "text"),
+        ("Date Acompte 1", "text"),
+        ("Acompte 2", "text"),
+        ("Date Acompte 2", "text"),
+        ("Acompte 3", "text"),
+        ("Date Acompte 3", "text"),
+        ("Acompte 4", "text"),
+        ("Date Acompte 4", "text"),
+        ("Dossier envoyé", "checkbox"),
+        ("Date envoi", "text"),
+        ("Escrow", "checkbox"),
+        # Ajoute ici tout champ supplémentaire
+    ]
+
     for idx, row in df.iterrows():
         with st.expander(f"Dossier N°{row.get('Dossier N', idx)} — {row.get('Nom', '')}", expanded=False):
-
-            nom      = st.text_input("Nom", value=str(row.get("Nom", "")), key=f"nom_{idx}")
-            categorie = st.text_input("Catégories", value=str(row.get("Catégories", "")), key=f"cat_{idx}")
-            sous_cat = st.text_input("Sous-catégories", value=str(row.get("Sous-catégories", "")), key=f"souscat_{idx}")
-            visa = st.text_input("Visa", value=str(row.get("Visa", "")), key=f"visa_{idx}")
-
-            honoraires = st.text_input("Montant honoraires (US $)", value=str(row.get("Montant honoraires (US $)", "")), key=f"hon_{idx}")
-            autres_frais = st.text_input("Autres frais (US $)", value=str(row.get("Autres frais (US $)", "")), key=f"frais_{idx}")
-
-            acompte1 = st.text_input("Acompte 1", value=str(row.get("Acompte 1", "")), key=f"acomp1_{idx}")
-            date_acompte1 = st.text_input("Date Acompte 1", value=str(row.get("Date Acompte 1", "")), key=f"dateacomp1_{idx}")
-
-            dossier_envoye = st.checkbox("Dossier envoyé", value=str(row.get("Dossier envoyé", "")).strip().lower() in ["true", "1", "vrai", "oui", "x", "ok"], key=f"envoye_{idx}")
-            date_envoi = st.text_input("Date envoi", value=str(row.get("Date envoi", "")), key=f"dateenv_{idx}")
-
-            # Case à cocher Escrow
-            escrow_val = st.checkbox("Escrow", value=str(row.get("Escrow", "")).strip().lower() in ["true", "1", "vrai", "oui", "x", "ok"], key=f"escrow_{idx}")
-
-            # Ajoute autres champs si besoin (Acomptes 2,3,4, etc.)
+            vals = {}
+            for champ, typ in base_champs:
+                default = str(row.get(champ, ""))
+                if typ == "checkbox":
+                    vals[champ] = st.checkbox(
+                        champ,
+                        value=format_checkbox(default),
+                        key=f"{champ}_{idx}")
+                else:
+                    vals[champ] = st.text_input(champ, value=default, key=f"{champ}_{idx}")
 
             # Enregistrement
             if st.button(f"Enregistrer ce dossier", key=f"save_{idx}"):
-                df.at[idx, "Nom"] = nom
-                df.at[idx, "Catégories"] = categorie
-                df.at[idx, "Sous-catégories"] = sous_cat
-                df.at[idx, "Visa"] = visa
-                df.at[idx, "Montant honoraires (US $)"] = honoraires
-                df.at[idx, "Autres frais (US $)"] = autres_frais
-                df.at[idx, "Acompte 1"] = acompte1
-                df.at[idx, "Date Acompte 1"] = date_acompte1
-                df.at[idx, "Dossier envoyé"] = dossier_envoye
-                df.at[idx, "Date envoi"] = date_envoi
-                df.at[idx, "Escrow"] = escrow_val
+                for champ, typ in base_champs:
+                    if typ == "checkbox":
+                        df.at[idx, champ] = vals[champ]
+                    else:
+                        df.at[idx, champ] = vals[champ]
                 save_flag = True
                 st.success(f"Dossier N°{row.get('Dossier N', idx)} mis à jour.")
 
-    # Sauvegarde globale si au moins une modif
     if save_flag:
         data["Clients"] = df
         save_data(data)
         st.info("Les modifications ont été sauvegardées.")
 
-    # Aperçu synthétique en bas
+    # Aperçu synthétique
     st.subheader("Aperçu synthétique des dossiers")
-    st.dataframe(df, use_container_width=True)
+    # Choix des colonnes à afficher en synthèse
+    synth_cols = [
+        "Dossier N", "Nom", "Statut",
+        "Montant honoraires (US $)", "Autres frais (US $)",
+        "Acompte 1", "Acompte 2", "Acompte 3", "Acompte 4",
+        "Dossier envoyé", "Escrow"
+    ]
+    available_columns = [col for col in synth_cols if col in df.columns]
+    st.dataframe(df[available_columns], use_container_width=True)

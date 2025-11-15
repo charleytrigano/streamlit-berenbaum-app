@@ -28,15 +28,19 @@ def tab_escrow():
     if "Escrow" not in df.columns:
         df["Escrow"] = False
 
-    # S'assurer que la colonne Escrow est booléenne
-    df["Escrow"] = df["Escrow"].apply(lambda x: True if str(x).lower() in ("true", "vrai", "1") else False)
+    # S'assurer que la colonne Escrow est booléenne/interprétée correctement
+    def escrow_bool(val):
+        str_val = str(val).strip().lower()
+        return str_val in ("true", "vrai", "1")
 
-    # Condition 1 : ESCROW coché
+    df["Escrow"] = df["Escrow"].apply(escrow_bool)
+
+    # Condition 1 : case "Escrow" cochée
     mask_escrow = df["Escrow"] == True
     # Condition 2 : honoraires à zéro et acompte 1 > 0
     mask_auto = (df["Montant honoraires (US $)"] == 0) & (df["Acompte 1"] > 0)
 
-    # Union (pas de doublons)
+    # Union des deux filtres
     escrow_df = df[mask_escrow | mask_auto].copy()
 
     if escrow_df.empty:

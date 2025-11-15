@@ -63,5 +63,3 @@ def tab_gestion():
         df.loc[df[mask].index[0], date_col] = pd.to_datetime(st.session_state.get(f"date_acompte_{n}", None))
 
     # ... puis sauvegarde comme avant
-
-
